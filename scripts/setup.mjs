@@ -1,4 +1,3 @@
-// npm run setup — один раз после клонирования. Повторный запуск безопасен.
 import { spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'

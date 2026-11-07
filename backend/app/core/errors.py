@@ -42,7 +42,6 @@ class ExternalServiceError(AppError):
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _handle_app_error(_: Request, exc: AppError) -> JSONResponse:
-        # Формат совпадает с HTTPException FastAPI: {"detail": "..."}
         return JSONResponse(
             status_code=exc.status_code, content={"detail": exc.message, "code": exc.code}
         )

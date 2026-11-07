@@ -7,7 +7,7 @@ services:
       - "${API_PORT:-8000}:8000"
     environment:
       - ENVIRONMENT=prod
-      - APP_NAME=${APP_NAME:-Launchpad}
+      - APP_NAME=${APP_NAME:-AuditLens}
       - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/app.db}
       - ENABLE_AUTH=${ENABLE_AUTH:-false}
       - ENABLE_UPLOADS=${ENABLE_UPLOADS:-false}

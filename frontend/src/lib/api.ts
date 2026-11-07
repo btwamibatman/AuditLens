@@ -1,9 +1,3 @@
-/**
- * Единый HTTP-клиент. Все запросы к бэкенду идут через него.
- *
- *   const items = await api.get<Page<Item>>('/items', { query: { q: 'demo' } })
- *   await api.post<Item>('/items', { title: 'New' })
- */
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? '/api'
 const TOKEN_KEY = 'hs_token'
@@ -48,7 +42,6 @@ function buildUrl(path: string, query?: Query) {
 function errorMessage(data: unknown, status: number): string {
   const detail = (data as { detail?: unknown } | null)?.detail
   if (typeof detail === 'string') return detail
-  // Ошибки валидации FastAPI: [{loc, msg}, ...]
   if (Array.isArray(detail)) {
     return detail.map((d) => `${(d.loc ?? []).slice(1).join('.')}: ${d.msg}`).join('; ')
   }
@@ -101,7 +94,6 @@ export const api = {
   },
 }
 
-/** Ответ бэкенда для списков (app/core/schemas.py → Page). */
 export interface Page<T> {
   items: T[]
   total: number

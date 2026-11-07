@@ -1,6 +1,3 @@
-// npm run dev        — бэкенд + фронтенд одной командой
-// npm run dev:api    — только бэкенд
-// npm run dev:web    — только фронтенд
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -56,7 +53,6 @@ process.on('SIGINT', () => shutdown(0))
 process.on('SIGTERM', () => shutdown(0))
 
 if (only !== 'web') {
-  // Миграции перед стартом — товарищ по команде мог добавить новую.
   if ((await runPython(['-m', 'alembic', 'upgrade', 'head'])) !== 0) {
     console.error(color.red('Миграции не применились — проверьте DATABASE_URL и backend/migrations'))
     process.exit(1)

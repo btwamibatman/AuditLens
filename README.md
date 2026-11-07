@@ -1,4 +1,4 @@
-# Launchpad
+# AuditLens
 
 Reusable full-stack starter for turning a new idea into a working app. It includes a Vue 3 + TypeScript frontend, a FastAPI backend, database migrations, and optional examples for authentication, AI, and file uploads.
 

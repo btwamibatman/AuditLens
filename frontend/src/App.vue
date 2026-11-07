@@ -59,7 +59,7 @@ onUnmounted(() => window.removeEventListener('auth:logout', logout))
         <div class="app-brand">
           <div class="app-brand__icon">✦</div>
           <div>
-            <div class="app-brand__title">{{ meta?.app_name || 'Launchpad' }}</div>
+            <div class="app-brand__title">{{ meta?.app_name || 'AuditLens' }}</div>
             <div class="small faint">{{ meta?.environment || 'dev' }} · Vue</div>
           </div>
         </div>

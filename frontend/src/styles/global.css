@@ -22,7 +22,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Мягкое свечение на фоне */
 body::before {
   content: '';
   position: fixed;
@@ -72,7 +71,6 @@ code {
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; border: 2px solid var(--bg); }
 
-/* --- Утилиты раскладки (держим минимум) --- */
 .stack { display: flex; flex-direction: column; gap: var(--gap, 16px); }
 .row { display: flex; align-items: center; gap: var(--gap, 12px); flex-wrap: wrap; }
 .row.between { justify-content: space-between; }

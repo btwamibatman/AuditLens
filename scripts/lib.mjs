@@ -1,4 +1,3 @@
-// Общие хелперы для скриптов запуска. Без зависимостей — только Node.js.
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -15,7 +14,6 @@ export const color = { cyan: c(36), magenta: c(35), green: c(32), yellow: c(33),
 export function loadEnv() {
   const file = join(ROOT, '.env')
   if (!existsSync(file)) return
-  // Простой парсер .env (process.loadEnvFile есть не во всех версиях Node).
   for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
     const m = line.match(/^\s*([\w.]+)\s*=\s*(.*)\s*$/)
     if (!m || line.trim().startsWith('#')) continue
@@ -39,7 +37,6 @@ export function useUv() {
   return _uv
 }
 
-/** Команда для запуска python внутри окружения бэкенда: uv, если есть, иначе backend/.venv. */
 export function backendPython(args) {
   if (useUv()) return { cmd: 'uv', args: ['run', '--extra', 'dev', 'python', ...args] }
   return { cmd: venvPython(), args }
@@ -49,7 +46,6 @@ export const backendReady = () => useUv() || existsSync(venvPython())
 
 export const childEnv = (extra = {}) => ({ ...process.env, PYTHONUTF8: '1', PYTHONUNBUFFERED: '1', ...extra })
 
-/** Запуск с наследованием вывода. Возвращает Promise с кодом выхода. */
 export function run(cmd, args, { cwd = ROOT, shell = false, env } = {}) {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { cwd, stdio: 'inherit', shell, env: env ?? childEnv() })

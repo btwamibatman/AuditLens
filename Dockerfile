@@ -1,4 +1,3 @@
-# 1-й этап: сборка фронтенда
 FROM node:22-alpine AS frontend-builder
 WORKDIR /app/frontend
 
@@ -8,7 +7,6 @@ RUN npm ci --no-audit
 COPY frontend ./
 RUN npm run build
 
-# 2-й этап: Python бэкенд + собранный фронтенд
 FROM python:3.12-slim AS runner
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -33,5 +31,4 @@ EXPOSE 8000
 
 WORKDIR /app/backend
 
-# Автоматически накатываем миграции и сидим при старте, затем запускаем uvicorn
 CMD ["sh", "-c", "python -m alembic upgrade head && python -m app.seed && python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]
