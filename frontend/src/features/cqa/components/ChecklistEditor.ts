@@ -287,7 +287,7 @@ export function renderChecklistEditor(container: HTMLElement) {
                   <button
                     id="cqa-activate-btn"
                     ${saving ? 'disabled' : ''}
-                    class="px-3 py-1.5 rounded-lg text-xs font-medium border border-emerald-600 text-emerald-600 hover:bg-emerald-50"
+                    class="px-3 py-1.5 rounded-lg text-xs font-medium border border-emerald-600 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-950 transition-colors"
                   >
                     Сделать активным
                   </button>
@@ -297,7 +297,7 @@ export function renderChecklistEditor(container: HTMLElement) {
                 <button
                   id="cqa-reset-default-btn"
                   ${saving ? 'disabled' : ''}
-                  class="px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-300 text-slate-600 hover:bg-slate-50"
+                  class="px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
                 >
                   Сброс к ТЗ
                 </button>
@@ -377,7 +377,7 @@ export function renderChecklistEditor(container: HTMLElement) {
                   </h3>
                   <button
                     id="cqa-add-crit-btn"
-                    class="text-xs px-3 py-1.5 rounded-lg border border-emerald-600 text-emerald-600 font-medium hover:bg-emerald-50"
+                    class="text-xs px-3 py-1.5 rounded-lg border border-emerald-600 text-emerald-600 font-medium hover:bg-emerald-50 hover:text-emerald-950 transition-colors"
                   >
                     + Добавить критерий
                   </button>
@@ -410,9 +410,10 @@ export function renderChecklistEditor(container: HTMLElement) {
                         </div>
                         <button
                           data-del-crit="${idx}"
-                          class="del-crit-btn text-xs text-red-600 hover:text-red-700"
+                          class="del-crit-btn text-xs text-red-600 hover:text-red-700 inline-flex items-center gap-0.5 font-medium"
                         >
-                          Удалить ✕
+                          <span class="material-symbols-outlined text-[14px]">delete</span>
+                          <span>Удалить</span>
                         </button>
                       </div>
 
@@ -499,9 +500,10 @@ export function renderChecklistEditor(container: HTMLElement) {
                                 />
                                 <button
                                   data-del-scale="${idx}:${lIdx}"
-                                  class="del-scale-btn text-xs text-red-500"
+                                  class="del-scale-btn text-xs text-red-500 hover:text-red-700 inline-flex items-center justify-center p-0.5"
+                                  title="Удалить ступень"
                                 >
-                                  ✕
+                                  <span class="material-symbols-outlined text-[14px]">close</span>
                                 </button>
                               </div>
                             `

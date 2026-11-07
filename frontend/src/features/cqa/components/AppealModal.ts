@@ -37,7 +37,7 @@ export function showAppealCreateModal(criterion: CriterionResult, evaluationId: 
         <div class="flex items-center justify-end gap-2.5 pt-2">
           <button
             id="modal-cancel-btn"
-            class="px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+            class="px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white transition-colors"
           >
             Отмена
           </button>
@@ -84,8 +84,11 @@ export function showAppealCreateModal(criterion: CriterionResult, evaluationId: 
       store.showToast('success', 'Апелляция успешно создана и отправлена на рассмотрение!')
       close()
       // Перечитываем апелляции
-      const appeals = await cqaApi.listAppeals(evaluationId)
-      store.setState({ appeals })
+      const [appeals, allAppeals] = await Promise.all([
+        cqaApi.listAppeals(evaluationId).catch(() => []),
+        cqaApi.listAppeals().catch(() => []),
+      ])
+      store.setState({ appeals, allAppeals })
     } catch (err: any) {
       errorEl.textContent = err.message || 'Ошибка отправки апелляции'
       errorEl.classList.remove('hidden')
@@ -177,7 +180,7 @@ export function showAppealReviewModal(appeal: AppealRead, evaluation: Evaluation
         <div class="flex items-center justify-end gap-2.5 pt-2">
           <button
             id="modal-review-cancel-btn"
-            class="px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+            class="px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white transition-colors"
           >
             Отмена
           </button>
@@ -253,8 +256,12 @@ export function showAppealReviewModal(appeal: AppealRead, evaluation: Evaluation
       store.showToast('success', 'Решение зафиксировано, оценка пересчитана!')
       close()
       store.setState({ currentEvaluation: updatedEval })
-      const appeals = await cqaApi.listAppeals(updatedEval.id)
-      store.setState({ appeals })
+      const [appeals, allEvals, allAppeals] = await Promise.all([
+        cqaApi.listAppeals(updatedEval.id).catch(() => []),
+        cqaApi.listEvaluations().catch(() => []),
+        cqaApi.listAppeals().catch(() => []),
+      ])
+      store.setState({ appeals, allEvaluations: allEvals, allAppeals })
     } catch (err: any) {
       errorEl.textContent = err.message || 'Ошибка сохранения решения'
       errorEl.classList.remove('hidden')

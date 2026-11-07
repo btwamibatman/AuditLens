@@ -1,5 +1,6 @@
 import './styles/global.css'
 import { renderHeader } from '@/components/Header'
+import { renderToast } from '@/components/Toast'
 import { cqaApi } from '@/features/cqa/api'
 import { renderChecklistEditor } from '@/features/cqa/components/ChecklistEditor'
 import { renderConversationList } from '@/features/cqa/components/ConversationList'
@@ -19,12 +20,15 @@ function initApp() {
   root.innerHTML = `
     <div id="app-header"></div>
     <main id="app-main" class="flex-1 overflow-hidden p-3 sm:p-4 max-w-7xl w-full mx-auto"></main>
+    <div id="app-toast" class="fixed bottom-6 right-6 z-50 pointer-events-none max-w-sm w-full"></div>
   `
 
   const headerContainer = document.getElementById('app-header')!
   const mainContainer = document.getElementById('app-main')!
+  const toastContainer = document.getElementById('app-toast')!
 
   renderHeader(headerContainer)
+  renderToast(toastContainer)
 
   let currentTab: string | null = null
 
