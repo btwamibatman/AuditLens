@@ -1,0 +1,48 @@
+/* Дизайн-токены. Поменяйте --accent-* и --bg-* — и весь UI перекрасится под ваш проект. */
+:root {
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', monospace;
+
+  /* Фон и поверхности */
+  --bg: hsl(234 30% 5%);
+  --bg-elevated: hsl(234 26% 9%);
+  --surface: hsl(234 30% 100% / 0.04);
+  --surface-hover: hsl(234 30% 100% / 0.07);
+  --surface-strong: hsl(234 22% 13%);
+  --border: hsl(234 30% 100% / 0.08);
+  --border-strong: hsl(234 30% 100% / 0.16);
+
+  /* Текст */
+  --text: hsl(230 30% 96%);
+  --text-muted: hsl(230 14% 68%);
+  --text-faint: hsl(230 10% 48%);
+
+  /* Акценты */
+  --accent: hsl(258 90% 66%);
+  --accent-2: hsl(188 86% 53%);
+  --accent-soft: hsl(258 90% 66% / 0.16);
+  --gradient: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+
+  /* Статусы */
+  --success: hsl(152 68% 50%);
+  --warning: hsl(38 95% 60%);
+  --danger: hsl(352 85% 63%);
+  --info: hsl(205 90% 62%);
+
+  /* Геометрия */
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 18px;
+  --radius-full: 999px;
+  --shadow: 0 10px 30px -12px hsl(240 60% 2% / 0.7);
+  --shadow-glow: 0 8px 32px -8px hsl(258 90% 60% / 0.55);
+  --ring: 0 0 0 3px hsl(258 90% 66% / 0.35);
+
+  --sidebar-w: 248px;
+  --content-max: 1120px;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --t-fast: 140ms var(--ease);
+  --t: 240ms var(--ease);
+
+  color-scheme: dark;
+}

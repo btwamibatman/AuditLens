@@ -1,0 +1,100 @@
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Мягкое свечение на фоне */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 500px at 85% -10%, hsl(258 90% 60% / 0.16), transparent 60%),
+    radial-gradient(700px 420px at -10% 110%, hsl(188 86% 50% / 0.1), transparent 60%);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+h1 { font-size: clamp(1.6rem, 2.4vw, 2.1rem); font-weight: 800; }
+h2 { font-size: 1.25rem; font-weight: 700; }
+h3 { font-size: 1.05rem; font-weight: 600; }
+p { margin: 0; }
+
+a {
+  color: var(--accent-2);
+  text-decoration: none;
+}
+a:hover { text-decoration: underline; }
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  padding: 0.12em 0.4em;
+  border-radius: 6px;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+}
+
+::selection { background: var(--accent-soft); }
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; border: 2px solid var(--bg); }
+
+/* --- Утилиты раскладки (держим минимум) --- */
+.stack { display: flex; flex-direction: column; gap: var(--gap, 16px); }
+.row { display: flex; align-items: center; gap: var(--gap, 12px); flex-wrap: wrap; }
+.row.between { justify-content: space-between; }
+.grid { display: grid; gap: var(--gap, 16px); grid-template-columns: repeat(auto-fill, minmax(var(--min, 260px), 1fr)); }
+.grow { flex: 1; min-width: 0; }
+.muted { color: var(--text-muted); }
+.faint { color: var(--text-faint); }
+.small { font-size: 0.85rem; }
+.mono { font-family: var(--font-mono); }
+.gradient-text {
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.fade-up { animation: fade-up 420ms var(--ease) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

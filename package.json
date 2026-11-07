@@ -1,0 +1,25 @@
+{
+  "name": "launchpad",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reusable FastAPI + Vue 3 fullstack project template",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "dev": "node scripts/dev.mjs",
+    "dev:api": "node scripts/dev.mjs api",
+    "dev:web": "node scripts/dev.mjs web",
+    "db:migrate": "node scripts/py.mjs -m alembic upgrade head",
+    "db:revision": "node scripts/py.mjs -m alembic revision --autogenerate -m",
+    "db:downgrade": "node scripts/py.mjs -m alembic downgrade -1",
+    "db:seed": "node scripts/py.mjs -m app.seed",
+    "db:reset": "node scripts/py.mjs -m alembic downgrade base && node scripts/py.mjs -m alembic upgrade head && node scripts/py.mjs -m app.seed",
+    "test": "node scripts/py.mjs -m pytest -q",
+    "lint": "node scripts/py.mjs -m ruff check . && npm --prefix frontend run typecheck",
+    "format": "node scripts/py.mjs -m ruff format . && node scripts/py.mjs -m ruff check --fix .",
+    "build": "npm --prefix frontend run build",
+    "start": "npm run build && node scripts/py.mjs -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
+  }
+}

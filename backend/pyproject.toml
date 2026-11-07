@@ -1,0 +1,35 @@
+[project]
+name = "launchpad-backend"
+version = "0.1.0"
+description = "FastAPI backend for Launchpad hackathon starter"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi[standard]>=0.115.0", # включает uvicorn, httpx, python-multipart, email-validator
+    "sqlalchemy>=2.0.36",
+    "alembic>=1.14.0",
+    "pydantic-settings>=2.6.0",
+    "psycopg[binary]>=3.2.0",     # драйвер Postgres (для SQLite ничего не нужно)
+    "pyjwt>=2.10.0",              # модуль auth
+    "bcrypt>=4.2.0",              # модуль auth
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3.0", "ruff>=0.8.0"]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008"] # Depends() в аргументах — норма для FastAPI
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
