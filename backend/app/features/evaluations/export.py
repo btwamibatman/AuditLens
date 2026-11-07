@@ -321,7 +321,7 @@ def build_export(
     }
 
 
-def write_atomic(payload: dict, target: Path) -> None:
+def write_atomic(payload: dict | list, target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     temp = None
     try:
