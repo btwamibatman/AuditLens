@@ -69,6 +69,7 @@ def build_prompt(conv: Conversation, config: ChecklistConfig) -> PromptPreview:
 
 # ---------------------------------------------------------------- привязка цитат
 
+
 def _norm(text: str) -> str:
     # В промпте пробелы и переносы строк уже объединены; остальной текст не меняем.
     return " ".join(text.split())
@@ -102,12 +103,11 @@ def _ground_one(transcript: list[dict], index: int, quote: str) -> Evidence | No
 
 
 def _checked_range(transcript: list[dict], raw: LLMCriterionOutput) -> CheckedRange | None:
-    if raw.checked_range is None or not transcript:
+    if raw.checked_range is None:
         return None
-    last = len(transcript) - 1
-    a = min(max(raw.checked_range.from_index, 0), last)
-    b = min(max(raw.checked_range.to_index, 0), last)
-    a, b = min(a, b), max(a, b)
+    a, b = raw.checked_range.from_index, raw.checked_range.to_index
+    if not 0 <= a <= b < len(transcript):
+        raise ExternalServiceError(f"LLM returned invalid checked_range for {raw.criterion_id}")
     return CheckedRange(
         from_index=a,
         to_index=b,
@@ -137,14 +137,7 @@ def build_criterion_result(
     c: Criterion, raw: LLMCriterionOutput | None, transcript: list[dict]
 ) -> CriterionResult:
     if raw is None:
-        # Модель пропустила критерий — ставим минимум и помечаем для ручной проверки
-        return _base_result(
-            c,
-            status="scored",
-            score=c.scale_min,
-            explanation="Модель не вернула оценку по критерию — требуется ручная проверка.",
-            warnings=["missing_in_llm_output"],
-        )
+        raise ExternalServiceError(f"LLM omitted criterion {c.id}")
 
     warnings: list[str] = []
     applicable = raw.applicable
@@ -194,7 +187,9 @@ def parse_llm_output(text: str) -> LLMEvaluationOutput:
         raise ExternalServiceError(f"LLM returned invalid JSON: {exc}") from exc
 
 
-def validate_llm_output(output: LLMEvaluationOutput, criteria: list[Criterion]) -> None:
+def validate_llm_output(
+    output: LLMEvaluationOutput, criteria: list[Criterion], transcript: list[dict]
+) -> None:
     expected = {c.id: c for c in criteria}
     ids = [r.criterion_id for r in output.criteria]
     if len(ids) != len(set(ids)) or set(ids) != set(expected):
@@ -202,13 +197,25 @@ def validate_llm_output(output: LLMEvaluationOutput, criteria: list[Criterion]) 
 
     for result in output.criteria:
         criterion = expected[result.criterion_id]
+        if not result.explanation.strip():
+            raise ExternalServiceError(f"LLM returned empty explanation for {criterion.id}")
+        checked_range = _checked_range(transcript, result)
+        has_evidence = any(
+            (grounded := _ground_one(transcript, ev.message_index, ev.quote)) is not None
+            and grounded.verified
+            for ev in result.evidence
+        )
         if not result.applicable:
-            if not criterion.na_allowed or not result.na_reason.strip():
+            if not criterion.na_allowed or not result.na_reason.strip() or not has_evidence:
                 raise ExternalServiceError(f"LLM returned invalid N/A for {criterion.id}")
             if result.critical_violation:
                 raise ExternalServiceError(f"LLM marked N/A criterion {criterion.id} as critical")
             continue
 
+        if not has_evidence and checked_range is None:
+            raise ExternalServiceError(
+                f"LLM returned no verified evidence or range for {criterion.id}"
+            )
         allowed = {level.value for level in criterion.scale_levels}
         if not criterion.scale_min <= result.score <= criterion.scale_max or (
             criterion.answer_type == "scale" and allowed and result.score not in allowed
@@ -257,6 +264,7 @@ def evaluate(db: Session, conversation_id: str, checklist_id: int | None = None)
         summary = ""
         if preview.llm_criteria:
             raw_output = None
+            last_validation_error = ""
             for _ in range(2):  # повтор, если модель вернула невалидный JSON
                 llm_result, _attempts = generate_with_retry(
                     provider,
@@ -275,13 +283,17 @@ def evaluate(db: Session, conversation_id: str, checklist_id: int | None = None)
                     validate_llm_output(
                         raw_output,
                         [c for c in config.active_criteria if c.id in preview.llm_criteria],
+                        conv.transcript,
                     )
                     break
                 except ExternalServiceError as exc:
                     raw_output = None
+                    last_validation_error = exc.message
                     log.warning("Invalid LLM output for %s: %s", conv.id, exc)
             if raw_output is None:
-                raise ExternalServiceError("LLM returned invalid output twice")
+                raise ExternalServiceError(
+                    f"LLM returned invalid output twice: {last_validation_error}"
+                )
             by_id = {r.criterion_id: r for r in raw_output.criteria}
             summary = raw_output.summary
         else:

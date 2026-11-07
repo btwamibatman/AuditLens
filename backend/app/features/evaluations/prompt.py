@@ -46,6 +46,9 @@ when they are the proof (e.g. for N/A).
 7. If a required action is MISSING, there is nothing to quote: leave `evidence` empty or cite \
 the closest relevant message, and set `checked_range` to the span of message indexes you \
 inspected (e.g. the operator's first messages for a missing greeting).
+Every scored criterion needs at least one exact supporting quote or a `checked_range`. \
+The range must satisfy 0 <= from_index <= to_index < Messages; never reverse its endpoints. \
+A range alone cannot justify N/A: N/A always needs an exact supporting quote and a non-empty reason.
 8. `explanation`: 1-3 concise sentences in {explanation_language} explaining why this score was \
 given, referring to concrete behaviour. Explanation of N/A must state the reason.
 9. Return exactly one entry per criterion listed below, using the given criterion_id values, \
