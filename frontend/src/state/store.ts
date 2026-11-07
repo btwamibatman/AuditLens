@@ -18,6 +18,9 @@ export interface AppState {
   searchQuery: string
   selectedLanguage: string
   selectedChannel: string
+  statusFilter: 'ALL' | 'CRITICAL' | 'APPEALS'
+  allEvaluations: EvaluationSummary[]
+  allAppeals: AppealRead[]
   checklists: ChecklistRead[]
   selectedChecklistId: number | null
   activeChecklist: ChecklistRead | null
@@ -44,6 +47,9 @@ const initialState: AppState = {
   searchQuery: '',
   selectedLanguage: 'ALL',
   selectedChannel: 'ALL',
+  statusFilter: 'ALL',
+  allEvaluations: [],
+  allAppeals: [],
   checklists: [],
   selectedChecklistId: null,
   activeChecklist: null,

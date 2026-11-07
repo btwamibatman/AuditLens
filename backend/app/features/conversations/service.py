@@ -1,3 +1,6 @@
+import html as html_lib
+import re
+
 import httpx
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -123,3 +126,49 @@ def fetch_dataset(group_id: str) -> list[ConversationRecord]:
 
 def sync_dataset(db: Session, group_id: str) -> ImportResult:
     return upsert_records(db, group_id, fetch_dataset(group_id))
+
+
+def resolve_audio_stream(db: Session, conversation_id: str):
+    conv = get_conversation(db, conversation_id)
+    if not conv.audio_url:
+        raise NotFoundError(f"No audio available for conversation {conversation_id}")
+
+    try:
+        # Запрашиваем URL из записи диалога
+        with httpx.Client(timeout=15.0, follow_redirects=True) as client:
+            resp = client.get(conv.audio_url)
+            resp.raise_for_status()
+
+            target_url = conv.audio_url
+            content_type = resp.headers.get("content-type", "").lower()
+
+            # Если вернулась HTML-страница плеера Power Automate, извлекаем прямой URL на mp3
+            if "text/html" in content_type:
+                match = re.search(r'src=["\'](https://[^"\']+)["\']', resp.text)
+                if match:
+                    target_url = html_lib.unescape(match.group(1))
+
+        # Стримим аудиофайл клиенту напрямую без CORS/ORB ограничений
+        client = httpx.Client(timeout=30.0, follow_redirects=True)
+        audio_req = client.build_request("GET", target_url)
+        audio_resp = client.send(audio_req, stream=True)
+
+        def iter_stream():
+            try:
+                yield from audio_resp.iter_bytes(chunk_size=65536)
+            finally:
+                audio_resp.close()
+                client.close()
+
+        headers = {
+            "Content-Type": audio_resp.headers.get("content-type", "audio/mpeg"),
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "private, max-age=3600",
+        }
+        if "content-length" in audio_resp.headers:
+            headers["Content-Length"] = audio_resp.headers["content-length"]
+
+        return iter_stream(), headers, audio_resp.status_code
+    except Exception as exc:
+        raise ExternalServiceError(f"Не удалось получить аудиозапись: {exc}") from exc
+

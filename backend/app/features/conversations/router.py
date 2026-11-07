@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 
 from app.core.db import DbSession
 from app.features.conversations import service
@@ -22,6 +23,13 @@ def list_conversations(
 @router.get("/{conversation_id}", response_model=ConversationRead)
 def get_conversation(conversation_id: str, db: DbSession):
     return service.get_conversation(db, conversation_id)
+
+
+@router.get("/{conversation_id}/audio")
+def get_conversation_audio(conversation_id: str, db: DbSession):
+    """Стриминг аудиозаписи звонка напрямую в аудиоплеер интерфейса."""
+    stream, headers, status_code = service.resolve_audio_stream(db, conversation_id)
+    return StreamingResponse(stream, status_code=status_code, headers=headers)
 
 
 @router.post("/sync", response_model=ImportResult)

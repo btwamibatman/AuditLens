@@ -1,5 +1,5 @@
 import { cqaApi } from '@/features/cqa/api'
-import { escapeHtml } from '@/lib/dom'
+import { escapeHtml, formatTimestamp } from '@/lib/dom'
 import { store, type AppState } from '@/state/store'
 import type { CriterionResult, Evidence } from '@/types/cqa'
 import { showAppealCreateModal, showAppealReviewModal } from './AppealModal'
@@ -16,9 +16,18 @@ export function renderEvaluationCard(container: HTMLElement) {
       store.setState({ currentEvaluation: res })
       store.showToast('success', 'Оценка диалога успешно завершена!')
       // Обновляем историю и апелляции
-      const history = await cqaApi.listEvaluations(convId)
-      const appeals = await cqaApi.listAppeals(res.id)
-      store.setState({ evaluationHistory: history, appeals })
+      const [history, allEvals, appeals, allAppeals] = await Promise.all([
+        cqaApi.listEvaluations(convId),
+        cqaApi.listEvaluations().catch(() => []),
+        cqaApi.listAppeals(res.id).catch(() => []),
+        cqaApi.listAppeals().catch(() => []),
+      ])
+      store.setState({
+        evaluationHistory: history,
+        allEvaluations: allEvals,
+        appeals,
+        allAppeals,
+      })
     } catch (err: any) {
       store.setState({ evalError: err.message || 'Ошибка оценки диалога' })
       store.showToast('error', err.message || 'Ошибка оценки диалога')
@@ -65,7 +74,7 @@ export function renderEvaluationCard(container: HTMLElement) {
                       ? 'selected'
                       : ''
                   }>
-                    #${cl.id} ${escapeHtml(cl.name)} ${cl.is_active ? '★ (активный)' : ''}
+                    #${cl.id} ${escapeHtml(cl.name)} ${cl.is_active ? '(активный)' : ''}
                   </option>
                 `,
                   )
@@ -114,7 +123,9 @@ export function renderEvaluationCard(container: HTMLElement) {
             state.evaluating
               ? `
             <div class="p-8 text-center text-sm text-slate-400">
-              <div class="text-3xl mb-2 animate-spin">⚡</div>
+              <div class="text-3xl mb-2 text-emerald-500 animate-spin">
+                <span class="material-symbols-outlined text-4xl">sync</span>
+              </div>
               <div class="font-semibold text-slate-700 dark:text-slate-200 text-base">AI выполняет оценку диалога...</div>
               <div class="text-slate-400 mt-1 text-xs">Проверяются 8 критериев по официальному чек-листу CQA</div>
             </div>
@@ -143,12 +154,12 @@ export function renderEvaluationCard(container: HTMLElement) {
                   ${totalScore !== null ? `${totalScore} / 100` : '—'}
                 </div>
                 <div class="flex items-center gap-2 mt-2.5">
-                  <span class="text-xs px-2.5 py-0.5 rounded-full font-semibold ${
+                  <span class="inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full font-semibold ${
                     ev.status === 'done'
                       ? 'bg-emerald-100 text-emerald-800'
                       : 'bg-amber-100 text-amber-800'
                   }">
-                    ${ev.status === 'done' ? '✓ Оценка завершена' : ev.status}
+                    ${ev.status === 'done' ? '<span class="material-symbols-outlined text-[13px]">check_circle</span><span>Оценка завершена</span>' : ev.status}
                   </span>
                   ${
                     isMock
@@ -233,13 +244,15 @@ export function renderEvaluationCard(container: HTMLElement) {
                         `
                               : crit.score && crit.score > 0
                                 ? `
-                          <span class="text-xs font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                            ✓ Выполнено (${crit.score})
+                          <span class="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                            <span class="material-symbols-outlined text-[13px]">check</span>
+                            <span>Выполнено (${crit.score})</span>
                           </span>
                         `
                                 : `
-                          <span class="text-xs font-bold px-2 py-0.5 rounded bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300">
-                            ✗ Не выполнено (0)
+                          <span class="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300">
+                            <span class="material-symbols-outlined text-[13px]">close</span>
+                            <span>Не выполнено (0)</span>
                           </span>
                         `
                         }
@@ -271,14 +284,22 @@ export function renderEvaluationCard(container: HTMLElement) {
                             return `
                             <div
                               data-evidence-index="${evItem.message_index}"
-                              class="cqa-evidence-click group cursor-pointer p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs hover:border-emerald-500 transition-colors shadow-2xs"
+                              class="cqa-evidence-click group cursor-pointer p-3 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs hover:border-emerald-500 transition-colors shadow-2xs"
                             >
-                              <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
-                                <span class="font-mono text-emerald-600 dark:text-emerald-400 group-hover:underline font-medium">
-                                  Реплика [#${evItem.message_index} / turn ${evItem.message_index + 1}] • ${escapeHtml(evItem.speaker)} • ${escapeHtml(evItem.timestamp)}
-                                </span>
-                                <span class="${evItem.verified ? 'text-emerald-600 font-semibold' : 'text-amber-600 font-semibold'}">
-                                  ${evItem.verified ? '✓ подтверждено' : '⚠️ цитата неточная'}
+                              <div class="flex items-center justify-between gap-2.5 mb-1.5">
+                                <div
+                                  class="truncate text-xs text-emerald-600 dark:text-emerald-400 group-hover:underline font-medium"
+                                  title="${escapeHtml(evItem.timestamp)}"
+                                >
+                                  Реплика [#${evItem.message_index} / turn ${evItem.message_index + 1}] • ${escapeHtml(evItem.speaker)} • <span class="font-mono text-slate-400 font-normal">${escapeHtml(formatTimestamp(evItem.timestamp))}</span>
+                                </div>
+                                <span class="shrink-0 text-[11px] px-2 py-0.5 rounded font-semibold whitespace-nowrap inline-flex items-center gap-1 ${
+                                  evItem.verified
+                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300'
+                                    : 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300'
+                                }">
+                                  <span class="material-symbols-outlined text-[12px]">${evItem.verified ? 'verified' : 'warning'}</span>
+                                  <span>${evItem.verified ? 'подтверждено' : 'цитата неточная'}</span>
                                 </span>
                               </div>
                               <div class="font-medium text-[13.5px] text-slate-800 dark:text-slate-200 leading-normal">
@@ -300,13 +321,14 @@ export function renderEvaluationCard(container: HTMLElement) {
                       <div
                         data-range-from="${crit.checked_range.from_index}"
                         data-range-to="${crit.checked_range.to_index}"
-                        class="cqa-range-click cursor-pointer mt-2 rounded-lg p-2.5 bg-slate-100/70 dark:bg-slate-900/60 text-xs text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800 flex items-center justify-between"
+                        class="cqa-range-click cursor-pointer mt-2 rounded-lg p-2.5 bg-slate-100/70 dark:bg-slate-900/60 text-xs text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2"
                       >
-                        <span>
-                          🔍 Проверенный диапазон: <b>[#${crit.checked_range.from_index} .. #${crit.checked_range.to_index}]</b>
-                          (${escapeHtml(crit.checked_range.from_timestamp)} — ${escapeHtml(crit.checked_range.to_timestamp)})
+                        <span class="truncate" title="${escapeHtml(crit.checked_range.from_timestamp)} — ${escapeHtml(crit.checked_range.to_timestamp)}">
+                          <span class="material-symbols-outlined text-[15px] align-middle mr-1 text-slate-500">manage_search</span>
+                          <span>Проверенный диапазон: <b>[#${crit.checked_range.from_index} .. #${crit.checked_range.to_index}]</b></span>
+                          <span class="text-slate-400">(${escapeHtml(formatTimestamp(crit.checked_range.from_timestamp))} — ${escapeHtml(formatTimestamp(crit.checked_range.to_timestamp))})</span>
                         </span>
-                        <span class="text-emerald-600 dark:text-emerald-400 underline text-xs font-medium">Показать участок</span>
+                        <span class="shrink-0 text-emerald-600 dark:text-emerald-400 underline text-xs font-medium">Показать участок</span>
                       </div>
                     `
                         : ''
@@ -320,7 +342,7 @@ export function renderEvaluationCard(container: HTMLElement) {
 
                       <button
                         data-appeal-crit-id="${escapeHtml(crit.criterion_id)}"
-                        class="cqa-open-appeal-btn text-xs font-semibold px-3 py-1 rounded text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 transition-colors"
+                        class="cqa-open-appeal-btn text-xs font-semibold px-3 py-1 rounded text-indigo-600 hover:text-indigo-950 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/50 dark:hover:text-white border border-indigo-200 dark:border-indigo-800 transition-colors"
                       >
                         Оспорить оценку
                       </button>

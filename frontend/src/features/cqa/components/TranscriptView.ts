@@ -1,4 +1,4 @@
-import { escapeHtml } from '@/lib/dom'
+import { escapeHtml, formatTimestamp } from '@/lib/dom'
 import { store, type AppState } from '@/state/store'
 import type { Utterance } from '@/types/cqa'
 
@@ -10,7 +10,9 @@ export function renderTranscriptView(container: HTMLElement) {
       container.innerHTML = `
         <div class="h-full flex items-center justify-center p-8 text-sm text-slate-400">
           <div class="text-center">
-            <div class="text-2xl mb-2 animate-spin">🔄</div>
+            <div class="text-2xl mb-2 text-emerald-500 animate-spin">
+              <span class="material-symbols-outlined text-3xl">progress_activity</span>
+            </div>
             <div>Загрузка транскрипта диалога...</div>
           </div>
         </div>
@@ -33,11 +35,11 @@ export function renderTranscriptView(container: HTMLElement) {
     container.innerHTML = `
       <div class="h-full flex flex-col bg-white dark:bg-slate-900 overflow-hidden">
         <!-- Шапка диалога -->
-        <div class="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex flex-wrap items-center justify-between gap-3 shrink-0">
-          <div class="flex items-center gap-2.5">
-            <span class="font-mono text-base font-bold text-slate-900 dark:text-white">
+        <div class="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/70 flex flex-wrap items-center justify-between gap-3 shrink-0">
+          <div class="flex items-center gap-3">
+            <h2 class="text-lg font-bold tracking-tight text-slate-900 dark:text-white">
               ${escapeHtml(conv.id)}
-            </span>
+            </h2>
             <span class="text-xs px-2.5 py-0.5 rounded-full font-semibold ${
               conv.language === 'RU'
                 ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200'
@@ -47,8 +49,9 @@ export function renderTranscriptView(container: HTMLElement) {
             }">
               ${escapeHtml(conv.language)}
             </span>
-            <span class="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-              ${isCall ? '📞 Звонок' : '💬 Чат'}
+            <span class="inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+              <span class="material-symbols-outlined text-[14px]">${isCall ? 'call' : 'chat'}</span>
+              <span>${isCall ? 'Звонок' : 'Чат'}</span>
             </span>
           </div>
 
@@ -61,17 +64,20 @@ export function renderTranscriptView(container: HTMLElement) {
         ${
           conv.audio_url
             ? `
-          <div class="p-3.5 bg-amber-50/60 dark:bg-amber-950/20 border-b border-amber-200/60 dark:border-amber-900/40 flex items-center gap-3 shrink-0">
-            <span class="text-sm font-semibold text-amber-900 dark:text-amber-200">Запись звонка:</span>
-            <audio controls src="${escapeHtml(conv.audio_url)}" class="h-9 flex-1 max-w-md"></audio>
-            <a
-              href="${escapeHtml(conv.audio_url)}"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="text-xs font-semibold text-amber-700 dark:text-amber-300 underline"
-            >
-              Открыть в новой вкладке ↗
-            </a>
+          <div class="px-5 py-3 bg-amber-500/10 dark:bg-amber-500/5 border-b border-amber-200/50 dark:border-amber-900/30 flex items-center justify-between gap-4 shrink-0">
+            <div class="flex items-center gap-2 shrink-0">
+              <span class="material-symbols-outlined text-amber-700 dark:text-amber-300 text-lg">headphones</span>
+              <span class="text-xs font-bold text-amber-900 dark:text-amber-200 whitespace-nowrap">Запись звонка:</span>
+            </div>
+            <div class="flex-1 max-w-xl flex items-center gap-3">
+              <audio
+                id="cqa-call-audio-player"
+                controls
+                preload="metadata"
+                src="/api/conversations/${encodeURIComponent(conv.id)}/audio"
+                class="h-8 w-full"
+              ></audio>
+            </div>
           </div>
         `
             : ''
@@ -105,7 +111,7 @@ export function renderTranscriptView(container: HTMLElement) {
                             : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800'
                   }"
                 >
-                  <div class="flex items-center justify-between text-xs mb-2">
+                  <div class="flex items-center justify-between gap-3 text-xs mb-2">
                     <div class="flex items-center gap-2">
                       <span class="font-bold px-2 py-0.5 rounded text-xs uppercase tracking-wider ${
                         isOperator
@@ -130,8 +136,11 @@ export function renderTranscriptView(container: HTMLElement) {
                         [#${idx} / turn ${idx + 1}]
                       </span>
                     </div>
-                    <span class="font-mono text-xs text-slate-400 font-medium">
-                      ${escapeHtml(u.timestamp)}
+                    <span
+                      class="font-mono text-xs text-slate-400 font-medium whitespace-nowrap"
+                      title="${escapeHtml(u.timestamp)}"
+                    >
+                      ${escapeHtml(formatTimestamp(u.timestamp))}
                     </span>
                   </div>
 
