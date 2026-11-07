@@ -1,11 +1,3 @@
-"""CLI пакетной оценки — сценарий для 23-го часа.
-
-    python -m app.features.evaluations.batch --group DEV --sync
-    python -m app.features.evaluations.batch --group CONTROL --sync --checklist 2
-    python -m app.features.evaluations.batch --ids p1-ru-001 p1-kz-003 --limit 5
-
-Результаты пишутся в БД (их видит UI) и в data/exports/<group>_<timestamp>.json/.csv.
-"""
 
 import argparse
 import csv

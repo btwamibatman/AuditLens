@@ -1,7 +1,3 @@
-"""Стартовый чек-лист AuditLens по чек-листу CQA организаторов (8 критериев).
-
-Веса семи оценочных критериев дают 100. Грубые ошибки — отдельный флаг без баллов.
-"""
 
 from app.features.checklists.schemas import ChecklistConfig
 

@@ -3,9 +3,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# ---------- Сырой ответ модели (валидируется после structured output) ----------
-
-
 class LLMEvidence(BaseModel):
     model_config = ConfigDict(strict=True)
 
@@ -39,9 +36,6 @@ class LLMEvaluationOutput(BaseModel):
     criteria: list[LLMCriterionOutput]
     summary: str
 
-
-# ---------- Итоговый результат (то, что видит UI) ----------
-
 ResultSource = Literal["ai", "auto", "reviewer"]
 
 
@@ -50,7 +44,7 @@ class Evidence(BaseModel):
     quote: str
     timestamp: str = ""
     speaker: str = ""
-    verified: bool = False  # цитата действительно найдена в транскрипте
+    verified: bool = False 
 
 
 class CheckedRange(BaseModel):

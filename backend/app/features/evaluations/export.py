@@ -1,4 +1,3 @@
-"""Export an explicitly selected set of saved evaluations in the official CQA format."""
 
 import argparse
 import json

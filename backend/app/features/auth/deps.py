@@ -1,9 +1,4 @@
 """Зависимости для защиты роутов.
-
-from app.features.auth.deps import CurrentUser
-
-@router.post("/secret")
-def secret(user: CurrentUser): ...
 """
 
 from typing import Annotated
