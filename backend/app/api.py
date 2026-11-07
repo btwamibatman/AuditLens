@@ -10,6 +10,7 @@ from app.features.appeals.router import router as appeals_router
 from app.features.checklists.router import router as checklists_router
 from app.features.conversations.router import router as conversations_router
 from app.features.evaluations.router import router as evaluations_router
+from app.features.evaluations.v1.router import router as evaluations_v1_router
 from app.features.items.router import router as items_router
 
 
@@ -48,6 +49,7 @@ def build_api_router(settings: Settings) -> APIRouter:
     api.include_router(checklists_router)
     api.include_router(conversations_router)
     api.include_router(evaluations_router)
+    api.include_router(evaluations_v1_router)
     api.include_router(appeals_router)
 
     if settings.enable_auth:

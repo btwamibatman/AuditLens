@@ -25,6 +25,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -e ./backend
 
 COPY backend/ ./backend/
+COPY checklist.json ./checklist.json
+COPY docs/invoke.json ./docs/invoke.json
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 EXPOSE 8000
