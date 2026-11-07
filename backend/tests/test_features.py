@@ -73,7 +73,7 @@ def test_appeal_and_review_flow():
             db,
             AppealCreate(
                 evaluation_id=ev.id,
-                criterion_id="greeting",
+                criterion_id="contact",
                 comment="Оператор поздоровался в 00:20",
             ),
         )
@@ -90,6 +90,6 @@ def test_appeal_and_review_flow():
             ),
         )
         assert rev_appeal.status == "overturned"
-        target = next(c for c in rev_ev.final_result["criteria"] if c["criterion_id"] == "greeting")
+        target = next(c for c in rev_ev.final_result["criteria"] if c["criterion_id"] == "contact")
         assert target["source"] == "reviewer"
         assert target["score"] == 1

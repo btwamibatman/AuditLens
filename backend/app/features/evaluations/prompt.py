@@ -29,8 +29,14 @@ If something is ambiguous, choose the score a careful human reviewer would defen
 3. For each criterion follow its description, scale levels, N/A rule and critical-error rule \
 literally. A criterion may be marked not applicable (applicable=false) ONLY if it explicitly \
 allows N/A and its N/A rule is satisfied; then give `na_reason` and set score to the scale minimum.
+For N/A, `evidence` must not be empty: cite the CLIENT/BOT/SYSTEM/OPERATOR messages that \
+demonstrate the condition, and explain how they satisfy the criterion's N/A rule. Do not \
+substitute a generic restatement of the rule for evidence from this conversation.
 4. `score` must be an integer within the criterion scale. For binary criteria: 1 = requirement \
 met, 0 = not met.
+Check every required part of a criterion. "A or B, and C" requires C together with at least \
+one of A or B. A polite phrase does not prove that another required action occurred. A \
+client's confirmation or a bot's action cannot replace an action required of the OPERATOR.
 5. `critical_violation` = true ONLY for criteria that define a critical-error rule and only when \
 that rule is clearly violated. Otherwise false.
 6. Evidence: list the message(s) that prove your decision. `message_index` must be the [#index] \

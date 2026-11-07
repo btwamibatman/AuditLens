@@ -210,6 +210,37 @@ def parse_llm_output(text: str) -> LLMEvaluationOutput:
         raise ExternalServiceError(f"LLM returned invalid JSON: {exc}") from exc
 
 
+def validate_llm_output(output: LLMEvaluationOutput, criteria: list[Criterion]) -> None:
+    expected = {c.id: c for c in criteria}
+    ids = [r.criterion_id for r in output.criteria]
+    if len(ids) != len(set(ids)) or set(ids) != set(expected):
+        raise ExternalServiceError("LLM must return every requested criterion exactly once")
+
+    for result in output.criteria:
+        criterion = expected[result.criterion_id]
+        if not result.applicable:
+            if not criterion.na_allowed or not result.na_reason.strip():
+                raise ExternalServiceError(f"LLM returned invalid N/A for {criterion.id}")
+            if result.critical_violation:
+                raise ExternalServiceError(f"LLM marked N/A criterion {criterion.id} as critical")
+            continue
+
+        allowed = {level.value for level in criterion.scale_levels}
+        if not criterion.scale_min <= result.score <= criterion.scale_max or (
+            criterion.answer_type == "scale" and allowed and result.score not in allowed
+        ):
+            raise ExternalServiceError(
+                f"LLM returned invalid score for {criterion.id}: {result.score}"
+            )
+        if result.critical_violation and not criterion.is_critical:
+            raise ExternalServiceError(
+                f"LLM marked non-critical criterion {criterion.id} as critical"
+            )
+        if criterion.id == "critical" and criterion.answer_type == "binary":
+            if result.critical_violation != bool(result.score):
+                raise ExternalServiceError("LLM critical score contradicts critical_violation")
+
+
 # ---------------------------------------------------------------- основной сценарий
 
 
@@ -257,11 +288,16 @@ def evaluate(db: Session, conversation_id: str, checklist_id: int | None = None)
                 evaluation.raw_response = llm_result.text
                 try:
                     raw_output = parse_llm_output(llm_result.text)
+                    validate_llm_output(
+                        raw_output,
+                        [c for c in config.active_criteria if c.id in preview.llm_criteria],
+                    )
                     break
                 except ExternalServiceError as exc:
-                    log.warning("Invalid LLM JSON for %s: %s", conv.id, exc)
+                    raw_output = None
+                    log.warning("Invalid LLM output for %s: %s", conv.id, exc)
             if raw_output is None:
-                raise ExternalServiceError("LLM returned invalid JSON twice")
+                raise ExternalServiceError("LLM returned invalid output twice")
             by_id = {r.criterion_id: r for r in raw_output.criteria}
             summary = raw_output.summary
         else:

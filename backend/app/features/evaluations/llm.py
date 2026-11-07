@@ -106,7 +106,7 @@ class MockProvider:
                     "criterion_id": cid,
                     "applicable": True,
                     "na_reason": "",
-                    "score": 1,
+                    "score": 0,
                     "critical_violation": False,
                     "explanation": "MOCK: оценка-заглушка, LLM не вызывалась.",
                     "evidence": [{"message_index": idx, "quote": quote}],
