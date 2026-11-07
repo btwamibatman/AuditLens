@@ -8,6 +8,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import ROOT_DIR
 from app.core.db import SessionLocal
@@ -48,27 +49,75 @@ def _validate_snapshot(snapshot: dict) -> None:
     for name, (weight, allowed, na_allowed) in SPECS.items():
         rule = by_id[name]
         _require(
-            rule.get("weight") == weight and rule.get("na_allowed", False) == na_allowed,
+            type(rule.get("weight")) in (int, float)
+            and rule["weight"] == weight and rule.get("na_allowed", False) is na_allowed,
             f"{name}: checklist weight or N/A rule does not match official criteria",
         )
         _require(
             rule.get("answer_type") == ("binary" if len(allowed) == 2 else "scale"),
             f"{name}: incorrect checklist answer type",
         )
+        _require(
+            rule.get("enabled", True) is True
+            and rule.get("channels", ["chat", "call"]) in (["chat", "call"], ["call", "chat"])
+            and rule.get("is_critical", False) is (name == "critical")
+            and type(rule.get("scale_min", 0)) is int and rule.get("scale_min", 0) == 0
+            and type(rule.get("scale_max", 1)) is int
+            and rule.get("scale_max", 1) == max(allowed),
+            f"{name}: criterion applicability or scale does not match official criteria",
+        )
         if len(allowed) != 2:
             levels = rule.get("scale_levels", [])
             _require(
                 isinstance(levels, list)
+                and len(levels) == len(allowed)
                 and all(
                     isinstance(level, dict) and type(level.get("value")) is int for level in levels
                 )
                 and {level["value"] for level in levels} == set(allowed),
                 f"{name}: checklist scale does not match official criteria",
             )
+    scoring = snapshot.get("scoring")
     _require(
-        by_id["critical"].get("is_critical") is True,
-        "Checklist critical criterion is not marked critical",
+        isinstance(scoring, dict) and scoring.get("total_scale", 100) == 100
+        and scoring.get("rounding", "half_up") == "half_up"
+        and type(scoring.get("rounding_digits")) is int and scoring["rounding_digits"] == 2
+        and scoring.get("critical_policy") == "flag_only",
+        "Checklist scoring does not match official scoring",
     )
+
+
+def _evidence_turns(item: dict, transcript: list, label: str) -> list[int]:
+    evidence = item.get("evidence")
+    _require(isinstance(evidence, list), f"{label}: invalid evidence")
+    turns = set()
+    for entry in evidence:
+        _require(
+            isinstance(entry, dict) and type(entry.get("message_index")) is int
+            and 0 <= entry["message_index"] < len(transcript)
+            and type(entry.get("verified")) is bool and isinstance(entry.get("quote"), str),
+            f"{label}: invalid evidence entry",
+        )
+        if not entry["verified"]:
+            continue
+        quote = " ".join(entry["quote"].split())
+        text = " ".join(transcript[entry["message_index"]]["text"].split())
+        _require(
+            bool(quote) and quote in text, f"{label}: verified quote is absent from transcript"
+        )
+        turns.add(entry["message_index"] + 1)
+    _require(item.get("status") != "na" or bool(turns), f"{label}: N/A needs verified evidence")
+    checked = item.get("checked_range")
+    if checked is not None:
+        _require(
+            isinstance(checked, dict) and type(checked.get("from_index")) is int
+            and type(checked.get("to_index")) is int
+            and 0 <= checked["from_index"] <= checked["to_index"] < len(transcript),
+            f"{label}: invalid checked range",
+        )
+        turns.update(range(checked["from_index"] + 1, checked["to_index"] + 2))
+    _require(bool(turns), f"{label}: missing verified evidence or checked range")
+    return sorted(turns)
 
 
 def _convert(evaluation: Evaluation, transcript: list, source: str) -> dict:
@@ -96,7 +145,7 @@ def _convert(evaluation: Evaluation, transcript: list, source: str) -> dict:
         _require(isinstance(item, dict), f"{cid}: invalid criterion")
         criterion_id = item.get("criterion_id")
         _require(
-            criterion_id in SPECS and criterion_id not in by_id,
+            isinstance(criterion_id, str) and criterion_id in SPECS and criterion_id not in by_id,
             f"{cid}: unknown or duplicate criterion {criterion_id}",
         )
         by_id[criterion_id] = item
@@ -107,12 +156,17 @@ def _convert(evaluation: Evaluation, transcript: list, source: str) -> dict:
     critical = None
     for criterion_id, (weight, allowed, na_allowed) in SPECS.items():
         item = by_id[criterion_id]
+        _require(
+            type(item.get("critical_violation")) is bool
+            and (criterion_id == "critical" or not item["critical_violation"]),
+            f"{cid}/{criterion_id}: inconsistent critical violation",
+        )
         status, raw = item.get("status"), item.get("score")
         _require(status in ("na", "scored"), f"{cid}/{criterion_id}: invalid status")
         if status == "na":
             _require(na_allowed and raw is None, f"{cid}/{criterion_id}: invalid N/A")
             value = None
-            rationale = item.get("na_reason") or item.get("explanation")
+            rationale = item.get("na_reason")
         else:
             _require(type(raw) is int and raw in allowed, f"{cid}/{criterion_id}: invalid value")
             value = bool(raw) if len(allowed) == 2 else raw
@@ -131,19 +185,7 @@ def _convert(evaluation: Evaluation, transcript: list, source: str) -> dict:
             isinstance(rationale, str) and bool(rationale.strip()),
             f"{cid}/{criterion_id}: missing rationale",
         )
-        evidence = item.get("evidence")
-        _require(
-            isinstance(evidence, list) and bool(evidence), f"{cid}/{criterion_id}: missing evidence"
-        )
-        turns = []
-        for entry in evidence:
-            _require(
-                isinstance(entry, dict)
-                and type(entry.get("message_index")) is int
-                and 0 <= entry["message_index"] < len(transcript),
-                f"{cid}/{criterion_id}: invalid evidence index",
-            )
-            turns.append(entry["message_index"] + 1)
+        turns = _evidence_turns(item, transcript, f"{cid}/{criterion_id}")
         criteria.append(
             {
                 "criterion_id": criterion_id,
@@ -158,7 +200,7 @@ def _convert(evaluation: Evaluation, transcript: list, source: str) -> dict:
     )
     actual = saved.get("total")
     _require(
-        type(actual) in (int, float) and Decimal(str(actual)) == expected and 0 <= expected <= 100,
+        type(actual) in (int, float) and 0 <= actual <= 100 and Decimal(str(actual)) == expected,
         f"{cid}: saved total does not match official scoring",
     )
     _require(
@@ -192,7 +234,8 @@ def build_export(
         "Team name and valid model mode are required",
     )
     _require(
-        dataset.get("isSuccess") is True and isinstance(dataset.get("data"), dict),
+        isinstance(dataset, dict) and dataset.get("isSuccess") is True
+        and isinstance(dataset.get("data"), dict),
         "Invalid source dataset",
     )
     data = dataset["data"]
@@ -212,6 +255,14 @@ def build_export(
             and isinstance(r.get("conversation_id"), str)
             and r["conversation_id"].strip()
             and isinstance(r.get("transcript"), list)
+            and isinstance(r.get("channel"), str) and isinstance(r.get("language"), str)
+            and (r.get("audio_url") is None or isinstance(r["audio_url"], str))
+            and all(
+                isinstance(turn, dict) and isinstance(turn.get("text"), str)
+                and isinstance(turn.get("timestamp"), str)
+                and turn.get("speaker") in ("client", "operator", "bot", "system")
+                for turn in r["transcript"]
+            )
             for r in records
         ),
         "Invalid source record",
@@ -240,8 +291,10 @@ def build_export(
         evaluation = evaluations_by_id[cid]
         conv = db_conversations[cid]
         _require(
-            conv.dataset_group == group and conv.transcript == record["transcript"],
-            f"{cid}: saved transcript or group differs from source",
+            conv.dataset_group == group and conv.transcript == record["transcript"]
+            and conv.channel == record["channel"] and conv.language == record["language"].upper()
+            and conv.audio_url == record.get("audio_url"),
+            f"{cid}: saved conversation differs from source",
         )
         _require(
             evaluation.checklist_id == checklist_id
@@ -255,12 +308,10 @@ def build_export(
             isinstance(evaluation.model, str) and bool(evaluation.model.strip()),
             f"{cid}: missing model name",
         )
+        _require(
+            evaluation.model.strip().casefold() != "mock", f"{cid}: mock is not a submission model"
+        )
         models.add(evaluation.model.strip())
-        if source == "final" and evaluation.status == "done":
-            _require(
-                model_mode == "hybrid" or evaluation.final_result == evaluation.ai_result,
-                f"{cid}: reviewed results require hybrid model mode",
-            )
         results.append(_convert(evaluation, record["transcript"], source))
     _require(len(snapshots) == 1, "Checklist snapshots differ")
     return {
@@ -340,6 +391,8 @@ def main() -> None:
         target = ROOT_DIR / "results" / args.kind / "results.json"
         write_atomic(payload, target)
         print(f"Wrote {len(payload['results'])} {args.source} results to {target}")
+    except SQLAlchemyError:
+        parser.exit(1, "Export failed: unable to read saved evaluations from the database\n")
     except (OSError, ValueError, TypeError, KeyError) as exc:
         parser.exit(1, f"Export failed: {exc}\n")
 

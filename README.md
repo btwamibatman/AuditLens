@@ -76,14 +76,29 @@ python -m app.features.evaluations.export --kind dev --group DEV \
   --team 'Team name' --model-mode external_api
 ```
 
-Use `--kind prod` and the original control dataset and group ID for PROD. Mode must be
-`hybrid` when exporting results changed by reviewers; choose the mode that reflects the
-actual models used. The export refuses incomplete or mismatched datasets, missing or
-duplicate evaluations, incompatible checklist snapshots, invalid evidence and scores.
+Use `--kind prod` and the original control dataset and group ID for PROD. Replace the
+checklist ID and version in the example with the values of the selected evaluations.
+`--source ai` exports the original model result; `--source final` explicitly exports the
+result after any appeal decisions. Identify reviewed results as reviewed when sharing
+them. `--model-mode` describes the actual model deployment (`local`, `external_api`, or
+`hybrid`); a human review does not change an external API model into a hybrid model.
+
+The export refuses incomplete or mismatched datasets, missing or duplicate evaluations,
+incompatible checklist snapshots, mock-model evaluations, invalid evidence and scores.
+Only verified quotes that still occur in the source transcript become evidence turns.
+For omitted actions, a valid checked range becomes the corresponding 1-based turns,
+including client, bot and system messages; no quote is invented. N/A still requires a
+verified quote and a nonempty reason. These checks do not establish semantic relevance:
+both model rationales and reviewer decisions still need quality review.
 It writes `results/dev/results.json` or `results/prod/results.json` atomically only after
 validation. DEV requires 65 records and PROD 10. No evaluations or model calls are made
 by the export command. Keep the evaluation ID selection as the record of the chosen run:
 the existing database does not store a batch run identifier.
+
+The command only reads saved evaluations. It neither evaluates missing conversations
+nor creates official results from test data. A failed export preserves an existing file.
+The older batch JSON/CSV files under `backend/data/exports/` are diagnostic exports and
+do not replace these official files.
 
 
 The root `.env.example` documents all supported settings. The default database is local SQLite. For PostgreSQL, set `DATABASE_URL` to a SQLAlchemy URL such as `postgresql+psycopg://user:password@localhost:5432/app` and start PostgreSQL separately.
