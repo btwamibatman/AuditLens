@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+
 class LLMEvidence(BaseModel):
     model_config = ConfigDict(strict=True)
 

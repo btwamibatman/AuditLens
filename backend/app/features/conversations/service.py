@@ -1,4 +1,5 @@
 import httpx
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -30,9 +31,24 @@ def get_conversation(db: Session, conversation_id: str) -> Conversation:
     return conv
 
 
+def _validate_unique_records(records: list[ConversationRecord]) -> None:
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for rec in records:
+        cid = rec.conversation_id.strip()
+        if not cid or cid != rec.conversation_id:
+            raise AppError("Conversation ID must not be blank or padded with whitespace")
+        if cid in seen and cid not in duplicates:
+            duplicates.append(cid)
+        seen.add(cid)
+    if duplicates:
+        raise AppError(f"Duplicate conversation_id in dataset: {', '.join(duplicates)}")
+
+
 def upsert_records(
     db: Session, dataset_group: str, records: list[ConversationRecord]
 ) -> ImportResult:
+    _validate_unique_records(records)
     created = updated = 0
     for rec in records:
         conv = db.get(Conversation, rec.conversation_id)
@@ -75,10 +91,34 @@ def fetch_dataset(group_id: str) -> list[ConversationRecord]:
     except ValueError as exc:
         raise ExternalServiceError("Dataset API returned non-JSON response") from exc
 
-    if not body.get("isSuccess", False):
-        raise ExternalServiceError(f"Dataset API error: {body.get('error') or 'unknown'}")
-    records = (body.get("data") or {}).get("records") or []
-    return [ConversationRecord.model_validate(r) for r in records]
+    if not isinstance(body, dict) or not body.get("isSuccess", False):
+        err_msg = body.get("error") if isinstance(body, dict) else "invalid response structure"
+        raise ExternalServiceError(f"Dataset API error: {err_msg or 'unknown'}")
+
+    data = body.get("data")
+    if not isinstance(data, dict):
+        raise ExternalServiceError("Dataset API returned missing data object")
+    returned_group = data.get("dataset_group_id")
+    if returned_group is not None and returned_group != group_id:
+        raise ExternalServiceError(
+            f"Dataset API group mismatch: requested {group_id}, got {returned_group}"
+        )
+    records = data.get("records")
+    if not isinstance(records, list) or not records:
+        raise ExternalServiceError("Dataset API returned no records")
+    total_records = data.get("total_records")
+    if isinstance(total_records, int) and total_records != len(records):
+        raise ExternalServiceError(
+            f"Dataset API count mismatch: total_records={total_records}, actual={len(records)}"
+        )
+
+    try:
+        parsed = [ConversationRecord.model_validate(r) for r in records]
+    except ValidationError as exc:
+        raise ExternalServiceError(f"Dataset API returned invalid record: {exc}") from exc
+
+    _validate_unique_records(parsed)
+    return parsed
 
 
 def sync_dataset(db: Session, group_id: str) -> ImportResult:

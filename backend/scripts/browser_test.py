@@ -32,10 +32,10 @@ os.environ["LLM_PROVIDER"] = "mock"
 
 sys.path.insert(0, str(BACKEND_DIR))
 
-from app.core.db import Base, SessionLocal, engine, import_all_models
-from app.features.checklists.service import ensure_default
-from app.features.conversations.schemas import ConversationRecord
-from app.features.conversations.service import upsert_records
+from app.core.db import Base, SessionLocal, engine, import_all_models  # noqa: E402
+from app.features.checklists.service import ensure_default  # noqa: E402
+from app.features.conversations.schemas import ConversationRecord  # noqa: E402
+from app.features.conversations.service import upsert_records  # noqa: E402
 
 
 def find_free_port() -> int:
@@ -63,7 +63,10 @@ def seed_test_data():
                     {
                         "timestamp": "00:05",
                         "speaker": "operator",
-                        "text": "Добрый день! Меня зовут Алия, Freedom Broker. Назовите, пожалуйста, ваш номер счёта для проверки.",
+                        "text": (
+                            "Добрый день! Меня зовут Алия, Freedom Broker. "
+                            "Назовите, пожалуйста, ваш номер счёта для проверки."
+                        ),
                     },
                     {
                         "timestamp": "00:15",
@@ -73,7 +76,10 @@ def seed_test_data():
                     {
                         "timestamp": "00:25",
                         "speaker": "operator",
-                        "text": "Спасибо! Проверила: платёж в обработке, поступит до 18:00 сегодня. Комиссия 0%.",
+                        "text": (
+                            "Спасибо! Проверила: платёж в обработке, "
+                            "поступит до 18:00 сегодня. Комиссия 0%."
+                        ),
                     },
                     {
                         "timestamp": "00:35",
@@ -96,7 +102,10 @@ def seed_test_data():
                     {
                         "timestamp": "12:06",
                         "speaker": "operator",
-                        "text": "Қайырлы күн! Freedom Broker, оператор Айнұр. Шот нөміріңізді айтыңызшы.",
+                        "text": (
+                            "Қайырлы күн! Freedom Broker, оператор Айнұр. "
+                            "Шот нөміріңізді айтыңызшы."
+                        ),
                     },
                 ],
                 audio_url="https://example.com/audio/sample-call.mp3",
@@ -141,7 +150,6 @@ def main():
 
     from playwright.sync_api import sync_playwright
 
-    success = False
     try:
         with sync_playwright() as p:
             print(f"Запуск браузера Chromium (порт {port})...")
@@ -151,8 +159,18 @@ def main():
 
             page.on("console", lambda msg: print(f"  [Browser Console] {msg.type}: {msg.text}"))
             page.on("pageerror", lambda exc: print(f"  [Browser PageError] {exc}"))
-            page.on("requestfailed", lambda req: print(f"  [Browser ReqFailed] {req.method} {req.url} - {req.failure}"))
-            page.on("response", lambda res: print(f"  [Browser Response {res.status}] {res.url}: {res.text()[:200]}") if res.status >= 400 else None)
+            page.on(
+                "requestfailed",
+                lambda req: print(f"  [Browser ReqFailed] {req.method} {req.url} - {req.failure}"),
+            )
+            page.on(
+                "response",
+                lambda res: (
+                    print(f"  [Browser Response {res.status}] {res.url}: {res.text()[:200]}")
+                    if res.status >= 400
+                    else None
+                ),
+            )
 
             # ----------------------------------------------------------------
             # F1: Загрузка страницы, список диалогов и транскрипт
@@ -224,8 +242,9 @@ def main():
             appeal_btn = page.locator("button:has-text('Оспорить оценку')").first
             appeal_btn.click()
 
-            page.wait_for_selector("textarea[placeholder*='Укажите, с чем вы не согласны']", timeout=5000)
-            page.fill("textarea[placeholder*='Укажите, с чем вы не согласны']", "Оператор представился вовремя!")
+            comment_sel = "textarea[placeholder*='Укажите, с чем вы не согласны']"
+            page.wait_for_selector(comment_sel, timeout=5000)
+            page.fill(comment_sel, "Оператор представился вовремя!")
             page.click("button:has-text('Отправить обращение')")
 
             page.wait_for_selector("text=На рассмотрении", timeout=8000)
@@ -237,12 +256,18 @@ def main():
 
             page.wait_for_selector("text=Решение проверяющего по апелляции", timeout=5000)
             page.check("input[type='radio'][value='change']")
-            page.fill("textarea[placeholder*='Опишите причину']", "Приветствие подтверждено аудитором.")
+            page.fill(
+                "textarea[placeholder*='Опишите причину']",
+                "Приветствие подтверждено аудитором.",
+            )
             page.click("button:has-text('Зафиксировать решение')")
 
             page.wait_for_selector("text=Пересмотрена", timeout=8000)
             page.wait_for_selector("text=Решение проверяющего", timeout=8000)
-            print("  ✓ Решение проверяющего зафиксировано, статус 'Пересмотрена', карточка пересчитана")
+            print(
+                "  ✓ Решение проверяющего зафиксировано, "
+                "статус 'Пересмотрена', карточка пересчитана"
+            )
 
             page.screenshot(path=str(SCREENSHOTS_DIR / "04_f3_appeal_reviewed.png"))
 
@@ -280,7 +305,6 @@ def main():
             page.screenshot(path=str(SCREENSHOTS_DIR / "05_f4_checklist_editor.png"))
 
             browser.close()
-            success = True
 
         print("\n" + "=" * 60)
         print("✅ ВСЕ 4 РАЗДЕЛА (F1, F2, F3, F4) УСПЕШНО ПРОТЕСТИРОВАНЫ В БРАУЗЕРЕ!")
@@ -297,6 +321,7 @@ def main():
         except Exception:
             pass
         import traceback
+
         traceback.print_exc()
         return 1
     finally:

@@ -6,7 +6,7 @@ services:
     ports:
       - "${API_PORT:-8000}:8000"
     environment:
-      - ENVIRONMENT=prod
+      - ENVIRONMENT=${ENVIRONMENT:-prod}
       - APP_NAME=${APP_NAME:-AuditLens}
       - DATABASE_URL=${DATABASE_URL:-sqlite:///./data/app.db}
       - ENABLE_AUTH=${ENABLE_AUTH:-false}
@@ -17,6 +17,18 @@ services:
       - AI_BASE_URL=${AI_BASE_URL:-https://api.openai.com/v1}
       - AI_API_KEY=${AI_API_KEY:-}
       - AI_MODEL=${AI_MODEL:-gpt-4o-mini}
+      # CQA / Gemini & Dataset API settings (from root .env)
+      - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.6-flash}
+      - GEMINI_THINKING_LEVEL=${GEMINI_THINKING_LEVEL:-medium}
+      - LLM_TIMEOUT_SECONDS=${LLM_TIMEOUT_SECONDS:-120}
+      - LLM_MAX_RETRIES=${LLM_MAX_RETRIES:-3}
+      - LLM_BATCH_CONCURRENCY=${LLM_BATCH_CONCURRENCY:-4}
+      - LLM_PRICE_INPUT_PER_1M=${LLM_PRICE_INPUT_PER_1M:-1.50}
+      - LLM_PRICE_OUTPUT_PER_1M=${LLM_PRICE_OUTPUT_PER_1M:-7.50}
+      - DATASET_API_URL=${DATASET_API_URL:-}
+      - DATASET_TIMEOUT_SECONDS=${DATASET_TIMEOUT_SECONDS:-30}
     volumes:
       - ./backend/data:/app/backend/data
     restart: unless-stopped

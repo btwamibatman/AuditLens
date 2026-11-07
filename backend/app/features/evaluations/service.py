@@ -1,9 +1,11 @@
 """Пайплайн оценки: диалог + чек-лист → промпт → LLM → валидация → привязка цитат → подсчёт → БД."""
 
+import copy
 import json
 import logging
 import re
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -20,7 +22,7 @@ from app.features.checklists.schemas import ChecklistConfig, Criterion
 from app.features.conversations import service as conversation_service
 from app.features.conversations.models import Conversation
 from app.features.evaluations import prompt as prompt_builder
-from app.features.evaluations.llm import generate_with_retry, get_provider
+from app.features.evaluations.llm import LLMResult, generate_with_retry, get_provider
 from app.features.evaluations.models import Evaluation
 from app.features.evaluations.schemas import (
     BatchRequest,
@@ -38,6 +40,8 @@ log = logging.getLogger(__name__)
 
 # Один общий предел на процесс; HTTP-запросы не ждут освобождения слота.
 _evaluation_slots = threading.BoundedSemaphore(max(1, get_settings().llm_batch_concurrency))
+
+PinnedChecklist = tuple[int, int, dict]
 
 
 # ---------------------------------------------------------------- подготовка
@@ -244,29 +248,62 @@ def _resolve_checklist(db: Session, checklist_id: int | None) -> Checklist:
     return checklist_service.get_checklist(db, checklist_id)
 
 
+def _snapshot_checklist(
+    checklist_id: int | None, db: Session | None = None
+) -> PinnedChecklist:
+    if db is not None:
+        checklist = _resolve_checklist(db, checklist_id)
+        return checklist.id, checklist.version, copy.deepcopy(checklist.config)
+    with SessionLocal() as session:
+        checklist = _resolve_checklist(session, checklist_id)
+        return checklist.id, checklist.version, copy.deepcopy(checklist.config)
+
+
 def evaluate(
-    db: Session, conversation_id: str, checklist_id: int | None = None,
-    *, wait_for_slot: bool = False,
+    db: Session,
+    conversation_id: str,
+    checklist_id: int | None = None,
+    *,
+    wait_for_slot: bool = False,
+    pinned_checklist: PinnedChecklist | None = None,
 ) -> Evaluation:
     if not _evaluation_slots.acquire(blocking=wait_for_slot):
         raise BusyError(code="evaluation_busy")
     try:
-        return _evaluate(db, conversation_id, checklist_id)
+        if pinned_checklist is None:
+            return _evaluate(db, conversation_id, checklist_id)
+        return _evaluate(
+            db, conversation_id, checklist_id, pinned_checklist=pinned_checklist
+        )
     finally:
         _evaluation_slots.release()
 
 
-def _evaluate(db: Session, conversation_id: str, checklist_id: int | None = None) -> Evaluation:
+def _evaluate(
+    db: Session,
+    conversation_id: str,
+    checklist_id: int | None = None,
+    *,
+    pinned_checklist: PinnedChecklist | None = None,
+) -> Evaluation:
     conv = conversation_service.get_conversation(db, conversation_id)
-    checklist = _resolve_checklist(db, checklist_id)
-    config = checklist_service.parse_config(checklist)
+    if pinned_checklist is not None:
+        chk_id, chk_version, chk_raw_config = pinned_checklist
+        chk_snapshot = copy.deepcopy(chk_raw_config)
+        config = ChecklistConfig.model_validate(chk_snapshot)
+    else:
+        checklist = _resolve_checklist(db, checklist_id)
+        chk_id = checklist.id
+        chk_version = checklist.version
+        chk_snapshot = copy.deepcopy(checklist.config)
+        config = checklist_service.parse_config(checklist)
     preview = build_prompt(conv, config)
 
     evaluation = Evaluation(
         conversation_id=conv.id,
-        checklist_id=checklist.id,
-        checklist_version=checklist.version,
-        checklist_snapshot=checklist.config,
+        checklist_id=chk_id,
+        checklist_version=chk_version,
+        checklist_snapshot=chk_snapshot,
         status="pending",
     )
     db.add(evaluation)
@@ -280,12 +317,19 @@ def _evaluate(db: Session, conversation_id: str, checklist_id: int | None = None
         if preview.llm_criteria:
             raw_output = None
             last_validation_error = ""
-            for _ in range(2):  # повтор, если модель вернула невалидный JSON
+            deadline = time.monotonic() + get_settings().llm_timeout_seconds
+            for attempt_idx in range(2):  # повтор, если модель вернула невалидный JSON
+                if attempt_idx > 0 and time.monotonic() >= deadline:
+                    raise ExternalServiceError(
+                        "LLM evaluation deadline exceeded after invalid output: "
+                        f"{last_validation_error}"
+                    )
                 llm_result, _attempts = generate_with_retry(
                     provider,
                     system_instruction=preview.system_instruction,
                     input_text=preview.input,
                     schema=preview.response_schema,
+                    deadline=deadline,
                 )
                 evaluation.input_tokens += llm_result.input_tokens
                 evaluation.output_tokens += llm_result.output_tokens
@@ -325,7 +369,9 @@ def _evaluate(db: Session, conversation_id: str, checklist_id: int | None = None
                     )
                 )
             else:
-                criteria_results.append(build_criterion_result(c, by_id.get(c.id), conv.transcript))
+                criteria_results.append(
+                    build_criterion_result(c, by_id.get(c.id), conv.transcript)
+                )
 
         result = compute_totals(criteria_results, config.scoring, summary)
         payload = result.model_dump(mode="json")
@@ -335,9 +381,18 @@ def _evaluate(db: Session, conversation_id: str, checklist_id: int | None = None
         evaluation.has_critical_error = result.has_critical_error
         evaluation.status = "done"
     except AppError as exc:
+        partial = getattr(exc, "partial_result", None)
+        if isinstance(partial, LLMResult):
+            evaluation.input_tokens += partial.input_tokens
+            evaluation.output_tokens += partial.output_tokens
+            evaluation.thought_tokens += partial.thought_tokens
+            evaluation.cost_usd += partial.cost_usd()
+            evaluation.latency_ms += partial.latency_ms
         evaluation.status = "failed"
         evaluation.error = exc.message
         db.commit()
+        exc.evaluation_id = evaluation.id  # type: ignore[attr-defined]
+        exc.cost_usd = evaluation.cost_usd  # type: ignore[attr-defined]
         raise
     db.commit()
     db.refresh(evaluation)
@@ -355,14 +410,80 @@ def get_evaluation(db: Session, evaluation_id: int) -> Evaluation:
 
 
 def list_evaluations(
-    db: Session, *, conversation_id: str | None = None, checklist_id: int | None = None
+    db: Session,
+    *,
+    conversation_id: str | None = None,
+    checklist_id: int | None = None,
+    checklist_version: int | None = None,
+    dataset_group: str | None = None,
 ) -> list[Evaluation]:
     stmt = select(Evaluation).order_by(Evaluation.id.desc())
+    if dataset_group:
+        stmt = stmt.join(Conversation, Conversation.id == Evaluation.conversation_id).where(
+            Conversation.dataset_group == dataset_group
+        )
     if conversation_id:
         stmt = stmt.where(Evaluation.conversation_id == conversation_id)
     if checklist_id:
         stmt = stmt.where(Evaluation.checklist_id == checklist_id)
+    if checklist_version is not None:
+        stmt = stmt.where(Evaluation.checklist_version == checklist_version)
     return list(db.scalars(stmt))
+
+
+def select_run_evaluation_ids(
+    db: Session,
+    *,
+    checklist_id: int,
+    checklist_version: int,
+    dataset_group: str | None = None,
+    conversation_ids: list[str] | None = None,
+) -> list[int]:
+    """Восстанавливает из БД список ID оценок для указанного чек-листа и версии."""
+    if conversation_ids is not None:
+        target_ids = list(dict.fromkeys(conversation_ids))
+    else:
+        target_ids = [
+            c.id for c in conversation_service.list_conversations(db, dataset_group=dataset_group)
+        ]
+    if not target_ids:
+        raise AppError("No target conversations found for run selection")
+
+    rows = list(
+        db.scalars(
+            select(Evaluation)
+            .where(
+                Evaluation.conversation_id.in_(target_ids),
+                Evaluation.checklist_id == checklist_id,
+                Evaluation.checklist_version == checklist_version,
+                Evaluation.status.in_(("done", "failed")),
+            )
+            .order_by(Evaluation.id.desc())
+        )
+    )
+    by_conv_done: dict[str, int] = {}
+    by_conv_failed: dict[str, int] = {}
+    for row in rows:
+        cid = row.conversation_id
+        if row.status == "done" and cid not in by_conv_done:
+            by_conv_done[cid] = row.id
+        elif row.status == "failed" and cid not in by_conv_failed:
+            by_conv_failed[cid] = row.id
+
+    selected: list[int] = []
+    missing: list[str] = []
+    for cid in target_ids:
+        ev_id = by_conv_done.get(cid) or by_conv_failed.get(cid)
+        if ev_id is None:
+            missing.append(cid)
+        else:
+            selected.append(ev_id)
+    if missing:
+        raise AppError(
+            f"Missing evaluations for checklist {checklist_id} v{checklist_version}: "
+            f"{', '.join(missing)}"
+        )
+    return selected
 
 
 # ---------------------------------------------------------------- пакетная оценка
@@ -370,6 +491,7 @@ def list_evaluations(
 _jobs: dict[str, BatchStatus] = {}
 _jobs_lock = threading.Lock()
 _batch_slot = threading.Lock()
+_active_batch_checklist: PinnedChecklist | None = None
 
 
 def _reserve_batch() -> None:
@@ -383,7 +505,7 @@ def _reserve_batch() -> None:
 def resolve_batch_targets(db: Session, req: BatchRequest) -> tuple[list[str], int]:
     checklist = _resolve_checklist(db, req.checklist_id)
     if req.conversation_ids:
-        ids = req.conversation_ids
+        ids = list(dict.fromkeys(req.conversation_ids))
     else:
         ids = [
             c.id
@@ -405,25 +527,49 @@ def resolve_batch_targets(db: Session, req: BatchRequest) -> tuple[list[str], in
     return ids, checklist.id
 
 
-def _evaluate_isolated(conversation_id: str, checklist_id: int) -> tuple[int, float]:
+def _evaluate_isolated(
+    conversation_id: str,
+    checklist_id: int,
+    pinned_checklist: PinnedChecklist | None = None,
+) -> tuple[int, float]:
     with SessionLocal() as db:  # отдельная сессия на поток
-        ev = evaluate(db, conversation_id, checklist_id, wait_for_slot=True)
+        ev = evaluate(
+            db,
+            conversation_id,
+            checklist_id,
+            wait_for_slot=True,
+            pinned_checklist=pinned_checklist,
+        )
         return ev.id, ev.cost_usd
 
 
 def run_batch(
-    conversation_ids: list[str], checklist_id: int, job: BatchStatus | None = None, on_progress=None
+    conversation_ids: list[str],
+    checklist_id: int,
+    job: BatchStatus | None = None,
+    on_progress=None,
+    *,
+    pinned_checklist: PinnedChecklist | None = None,
 ) -> BatchStatus:
+    global _active_batch_checklist
     _reserve_batch()
     try:
+        _active_batch_checklist = pinned_checklist or _snapshot_checklist(checklist_id)
         return _run_batch(conversation_ids, checklist_id, job, on_progress)
     finally:
+        _active_batch_checklist = None
         _batch_slot.release()
 
 
 def _run_batch(
-    conversation_ids: list[str], checklist_id: int, job: BatchStatus | None = None, on_progress=None
+    conversation_ids: list[str],
+    checklist_id: int,
+    job: BatchStatus | None = None,
+    on_progress=None,
+    *,
+    pinned_checklist: PinnedChecklist | None = None,
 ) -> BatchStatus:
+    pinned = pinned_checklist or _active_batch_checklist or _snapshot_checklist(checklist_id)
     job = job or BatchStatus(
         job_id=uuid.uuid4().hex[:12],
         status="running",
@@ -434,7 +580,8 @@ def _run_batch(
     workers = max(1, get_settings().llm_batch_concurrency)
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
-            pool.submit(_evaluate_isolated, cid, checklist_id): cid for cid in conversation_ids
+            pool.submit(_evaluate_isolated, cid, checklist_id, pinned): cid
+            for cid in conversation_ids
         }
         for future in as_completed(futures):
             cid = futures[future]
@@ -445,6 +592,12 @@ def _run_batch(
                     job.total_cost_usd = round(job.total_cost_usd + cost, 6)
                     job.done += 1
                 except Exception as exc:  # noqa: BLE001
+                    cost = getattr(exc, "cost_usd", 0.0)
+                    if isinstance(cost, (int, float)) and cost > 0:
+                        job.total_cost_usd = round(job.total_cost_usd + float(cost), 6)
+                    ev_id = getattr(exc, "evaluation_id", None)
+                    if isinstance(ev_id, int):
+                        job.evaluation_ids.append(ev_id)
                     job.failed += 1
                     job.errors[cid] = str(exc)[:500]
             if on_progress:
@@ -454,8 +607,20 @@ def _run_batch(
     return job
 
 
-def start_batch_job(conversation_ids: list[str], checklist_id: int) -> BatchStatus:
+def start_batch_job(
+    conversation_ids: list[str],
+    checklist_id: int,
+    *,
+    pinned_checklist: PinnedChecklist | None = None,
+) -> BatchStatus:
+    global _active_batch_checklist
     _reserve_batch()
+    try:
+        _active_batch_checklist = pinned_checklist or _snapshot_checklist(checklist_id)
+    except Exception:
+        _active_batch_checklist = None
+        _batch_slot.release()
+        raise
     job = BatchStatus(
         job_id=uuid.uuid4().hex[:12],
         status="running",
@@ -467,6 +632,7 @@ def start_batch_job(conversation_ids: list[str], checklist_id: int) -> BatchStat
         _jobs[job.job_id] = job
 
     def _runner():
+        global _active_batch_checklist
         try:
             _run_batch(conversation_ids, checklist_id, job)
         except Exception as exc:  # noqa: BLE001
@@ -474,6 +640,7 @@ def start_batch_job(conversation_ids: list[str], checklist_id: int) -> BatchStat
                 job.status = "failed"
                 job.errors["_batch"] = str(exc)
         finally:
+            _active_batch_checklist = None
             _batch_slot.release()
 
     try:
@@ -481,6 +648,7 @@ def start_batch_job(conversation_ids: list[str], checklist_id: int) -> BatchStat
     except Exception:
         with _jobs_lock:
             _jobs.pop(job.job_id, None)
+        _active_batch_checklist = None
         _batch_slot.release()
         raise
     return get_batch_job(job.job_id)
@@ -490,5 +658,8 @@ def get_batch_job(job_id: str) -> BatchStatus:
     with _jobs_lock:
         job = _jobs.get(job_id)
         if job is None:
-            raise NotFoundError(f"Batch job {job_id} not found")
+            raise NotFoundError(
+                f"Batch job {job_id} not found (in-memory batch progress is cleared on server "
+                "restart; completed evaluations remain available via GET /api/evaluations)"
+            )
         return job.model_copy(deep=True)

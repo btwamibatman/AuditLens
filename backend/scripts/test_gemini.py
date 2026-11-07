@@ -16,13 +16,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from app.core.config import get_settings
-from app.core.db import SessionLocal
-from app.features.checklists.service import ensure_default
-from app.features.conversations.schemas import ConversationRecord
-from app.features.conversations.service import upsert_records
-from app.features.evaluations.llm import get_provider
-from app.features.evaluations.service import evaluate
+from app.core.config import get_settings  # noqa: E402
+from app.core.db import SessionLocal  # noqa: E402
+from app.features.checklists.service import ensure_default  # noqa: E402
+from app.features.conversations.schemas import ConversationRecord  # noqa: E402
+from app.features.conversations.service import upsert_records  # noqa: E402
+from app.features.evaluations.llm import get_provider  # noqa: E402
+from app.features.evaluations.service import evaluate  # noqa: E402
 
 
 def main():
@@ -36,11 +36,10 @@ def main():
 
     if not settings.gemini_api_key:
         print("\n❌ ОШИБКА: GEMINI_API_KEY пустой в файле .env!")
-        print("Вставьте ваш API-ключ в .env: GEMINI_API_KEY=AIzaSy...")
+        print("Задайте ваш API-ключ в .env (без вывода секретов в консоль).")
         return 1
 
-    masked_key = settings.gemini_api_key[:8] + "..." + settings.gemini_api_key[-4:]
-    print(f"Ключ API  : {masked_key}")
+    print("Ключ API  : задан (скрыт)")
 
     print("\n[1/2] Отправка тестового запроса к модели...")
     provider = get_provider()
@@ -61,8 +60,11 @@ def main():
         print("  ✓ Модель ответила успешно!")
         print(f"  Ответ       : {ping.text}")
         print(f"  Задержка    : {ping.latency_ms} мс")
-        print(f"  Токены      : вход={ping.input_tokens}, выход={ping.output_tokens}, thinking={ping.thought_tokens}")
-        print(f"  Стоимость   : ${ping.cost_usd():.6f}")
+        print(
+            f"  Токены      : вход={ping.input_tokens}, "
+            f"выход={ping.output_tokens}, thinking={ping.thought_tokens}"
+        )
+        print(f"  Стоимость   : ~${ping.cost_usd():.6f} (расчётная)")
     except Exception as exc:
         print(f"\n❌ Ошибка подключения к Gemini: {exc}")
         return 1
@@ -81,19 +83,33 @@ def main():
             {
                 "timestamp": "00:08",
                 "speaker": "operator",
-                "text": "Добрый день! Меня зовут Алия, Freedom Broker. Назовите, пожалуйста, ваш номер счёта для проверки.",
+                "text": (
+                    "Добрый день! Меня зовут Алия, Freedom Broker. "
+                    "Назовите, пожалуйста, ваш номер счёта для проверки."
+                ),
             },
             {"timestamp": "00:20", "speaker": "client", "text": "Счёт 55443322."},
             {
                 "timestamp": "00:32",
                 "speaker": "operator",
-                "text": "Спасибо. Для вывода перейдите в приложении: Меню -> Переводы -> Вывод на карту РК, укажите сумму и подтвердите SMS-кодом. Срок зачисления от 5 до 15 минут, комиссия 0%.",
+                "text": (
+                    "Спасибо. Для вывода перейдите в приложении: Меню -> Переводы -> "
+                    "Вывод на карту РК, укажите сумму и подтвердите SMS-кодом. "
+                    "Срок зачисления от 5 до 15 минут, комиссия 0%."
+                ),
             },
-            {"timestamp": "00:45", "speaker": "client", "text": "Понял, всё получилось, спасибо большое!"},
+            {
+                "timestamp": "00:45",
+                "speaker": "client",
+                "text": "Понял, всё получилось, спасибо большое!",
+            },
             {
                 "timestamp": "00:52",
                 "speaker": "operator",
-                "text": "Отлично! Была рада помочь. Если вопросов больше нет, желаю вам отличного дня!",
+                "text": (
+                    "Отлично! Была рада помочь. "
+                    "Если вопросов больше нет, желаю вам отличного дня!"
+                ),
             },
         ],
         audio_url=None,
@@ -106,8 +122,8 @@ def main():
 
     print(f"  ✓ Диалог успешно оценён моделью {ev.model}!")
     print(f"  Итоговый балл : {ev.total_score} / 100")
-    print(f"  Грубые ошибки : {'Да (0 баллов)' if ev.has_critical_error else 'Нет'}")
-    print(f"  Стоимость     : ${ev.cost_usd:.5f} (~{ev.cost_usd * 500:.2f} тенге)")
+    print(f"  Грубые ошибки : {'Да (critical_flag=true)' if ev.has_critical_error else 'Нет'}")
+    print(f"  Стоимость     : ~${ev.cost_usd:.5f} (расчётная)")
 
     print("\nКритерии и найденные цитаты:")
     for c in ev.final_result.get("criteria", []):
@@ -125,4 +141,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-

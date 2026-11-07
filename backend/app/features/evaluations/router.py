@@ -17,7 +17,9 @@ router = APIRouter(prefix="/evaluations", tags=["evaluations"])
 
 
 @router.post(
-    "", response_model=EvaluationRead, status_code=status.HTTP_201_CREATED,
+    "",
+    response_model=EvaluationRead,
+    status_code=status.HTTP_201_CREATED,
     responses={429: {"description": "Все слоты оценки заняты; повторите запрос позже."}},
 )
 def evaluate(data: EvaluateRequest, db: DbSession):
@@ -26,13 +28,16 @@ def evaluate(data: EvaluateRequest, db: DbSession):
 
 
 @router.post(
-    "/batch", response_model=BatchStatus, status_code=status.HTTP_202_ACCEPTED,
+    "/batch",
+    response_model=BatchStatus,
+    status_code=status.HTTP_202_ACCEPTED,
     responses={409: {"description": "Пакетная обработка уже идёт."}},
 )
 def start_batch(data: BatchRequest, db: DbSession):
     """Фоновая оценка набора (напр. контрольных диалогов). Прогресс: GET /batch/{id}."""
     ids, checklist_id = service.resolve_batch_targets(db, data)
-    return service.start_batch_job(ids, checklist_id)
+    pinned = service._snapshot_checklist(checklist_id, db=db)
+    return service.start_batch_job(ids, checklist_id, pinned_checklist=pinned)
 
 
 @router.get("/batch/{job_id}", response_model=BatchStatus)
@@ -54,9 +59,19 @@ def prompt_preview(conversation_id: str, db: DbSession, checklist_id: int | None
 
 @router.get("", response_model=list[EvaluationSummary])
 def list_evaluations(
-    db: DbSession, conversation_id: str | None = None, checklist_id: int | None = None
+    db: DbSession,
+    conversation_id: str | None = None,
+    checklist_id: int | None = None,
+    checklist_version: int | None = None,
+    dataset_group: str | None = None,
 ):
-    return service.list_evaluations(db, conversation_id=conversation_id, checklist_id=checklist_id)
+    return service.list_evaluations(
+        db,
+        conversation_id=conversation_id,
+        checklist_id=checklist_id,
+        checklist_version=checklist_version,
+        dataset_group=dataset_group,
+    )
 
 
 @router.get("/{evaluation_id}", response_model=EvaluationRead)

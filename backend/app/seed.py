@@ -1,11 +1,13 @@
-"""Демо-данные: python -m app.seed  (или npm run db:seed из корня).
+"""Инициализация базовых данных: python -m app.seed (или npm run db:seed из корня).
 
-Заполняйте реалистичными данными под идею — это сильно улучшает демо.
+Гарантирует наличие стартового чек-листа CQA (8 критериев ТЗ), если таблица чек-листов пуста.
+Существующие чек-листы, диалоги и оценки не перезаписываются.
 """
 
 from sqlalchemy import func, select
 
 from app.core.db import SessionLocal
+from app.features.checklists.service import ensure_default
 from app.features.items.models import Item
 
 DEMO_ITEMS = [
@@ -22,12 +24,12 @@ DEMO_ITEMS = [
 
 def seed() -> None:
     with SessionLocal() as db:
+        checklist = ensure_default(db)
+        print(f"Active/default CQA checklist ready: id={checklist.id} v{checklist.version}")
         if db.scalar(select(func.count()).select_from(Item)):
-            print("Items already exist — skipping seed.")
             return
         db.add_all(Item(title=t, description=d, status=s) for t, d, s in DEMO_ITEMS)
         db.commit()
-        print(f"Seeded {len(DEMO_ITEMS)} items.")
 
 
 if __name__ == "__main__":
