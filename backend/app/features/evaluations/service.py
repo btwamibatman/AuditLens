@@ -6,7 +6,6 @@ import re
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from difflib import SequenceMatcher
 
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -70,11 +69,9 @@ def build_prompt(conv: Conversation, config: ChecklistConfig) -> PromptPreview:
 
 # ---------------------------------------------------------------- привязка цитат
 
-_QUOTE_CHARS = "\"'«»“”„`"
-
-
 def _norm(text: str) -> str:
-    return re.sub(r"\s+", " ", text.strip(_QUOTE_CHARS + " .…").casefold())
+    # В промпте пробелы и переносы строк уже объединены; остальной текст не меняем.
+    return " ".join(text.split())
 
 
 def _ground_one(transcript: list[dict], index: int, quote: str) -> Evidence | None:
@@ -93,7 +90,7 @@ def _ground_one(transcript: list[dict], index: int, quote: str) -> Evidence | No
     in_range = 0 <= index < len(transcript)
     q = _norm(quote)
     if not q:
-        return make(index, transcript[index].get("text", ""), True) if in_range else None
+        return make(index, quote, False) if in_range else None
 
     if in_range and q in _norm(transcript[index].get("text", "")):
         return make(index, quote, True)
@@ -101,19 +98,6 @@ def _ground_one(transcript: list[dict], index: int, quote: str) -> Evidence | No
         if q in _norm(msg.get("text", "")):
             return make(i, quote, True)
 
-    # Нечёткое совпадение (модель перефразировала / перевела)
-    best_i, best_ratio = -1, 0.0
-    for i, msg in enumerate(transcript):
-        text = _norm(msg.get("text", ""))
-        if not text:
-            continue
-        ratio = SequenceMatcher(None, q, text).find_longest_match(
-            0, len(q), 0, len(text)
-        ).size / len(q)
-        if ratio > best_ratio:
-            best_i, best_ratio = i, ratio
-    if best_i >= 0 and best_ratio >= 0.6:
-        return make(best_i, quote, True)
     return make(index, quote, False) if in_range else None
 
 

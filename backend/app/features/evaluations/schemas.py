@@ -7,33 +7,37 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class LLMEvidence(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     message_index: int
-    quote: str = ""
+    quote: str
 
 
 class LLMRange(BaseModel):
+    model_config = ConfigDict(strict=True)
+
     from_index: int
     to_index: int
 
 
 class LLMCriterionOutput(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", strict=True)
 
     criterion_id: str
-    applicable: bool = True
+    applicable: bool
     na_reason: str = ""
-    score: int = 0
-    critical_violation: bool = False
-    explanation: str = ""
-    evidence: list[LLMEvidence] = Field(default_factory=list)
+    score: int
+    critical_violation: bool
+    explanation: str
+    evidence: list[LLMEvidence]
     checked_range: LLMRange | None = None
 
 
 class LLMEvaluationOutput(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", strict=True)
 
     criteria: list[LLMCriterionOutput]
-    summary: str = ""
+    summary: str
 
 
 # ---------- Итоговый результат (то, что видит UI) ----------
