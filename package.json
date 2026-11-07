@@ -17,6 +17,7 @@
     "db:seed": "node scripts/py.mjs -m app.seed",
     "db:reset": "node scripts/py.mjs -m alembic downgrade base && node scripts/py.mjs -m alembic upgrade head && node scripts/py.mjs -m app.seed",
     "test": "node scripts/py.mjs -m pytest -q",
+    "test:gemini": "node scripts/py.mjs scripts/test_gemini.py",
     "lint": "node scripts/py.mjs -m ruff check . && npm --prefix frontend run typecheck",
     "format": "node scripts/py.mjs -m ruff format . && node scripts/py.mjs -m ruff check --fix .",
     "build": "npm --prefix frontend run build",

@@ -1,0 +1,85 @@
+import httpx
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.core.config import get_settings
+from app.core.errors import AppError, ExternalServiceError, NotFoundError
+from app.features.conversations.models import Conversation
+from app.features.conversations.schemas import ConversationRecord, ImportResult
+
+
+def is_call(channel: str) -> bool:
+    return "call" in channel.lower() or "voice" in channel.lower()
+
+
+def list_conversations(
+    db: Session, *, dataset_group: str | None = None, language: str | None = None
+) -> list[Conversation]:
+    stmt = select(Conversation).order_by(Conversation.id)
+    if dataset_group:
+        stmt = stmt.where(Conversation.dataset_group == dataset_group)
+    if language:
+        stmt = stmt.where(Conversation.language == language.upper())
+    return list(db.scalars(stmt))
+
+
+def get_conversation(db: Session, conversation_id: str) -> Conversation:
+    conv = db.get(Conversation, conversation_id)
+    if conv is None:
+        raise NotFoundError(f"Conversation {conversation_id} not found")
+    return conv
+
+
+def upsert_records(
+    db: Session, dataset_group: str, records: list[ConversationRecord]
+) -> ImportResult:
+    created = updated = 0
+    for rec in records:
+        conv = db.get(Conversation, rec.conversation_id)
+        payload = {
+            "dataset_group": dataset_group,
+            "channel": rec.channel,
+            "language": rec.language.upper(),
+            "transcript": [u.model_dump() for u in rec.transcript],
+            "audio_url": rec.audio_url,
+        }
+        if conv is None:
+            db.add(Conversation(id=rec.conversation_id, **payload))
+            created += 1
+        else:
+            for key, value in payload.items():
+                setattr(conv, key, value)
+            updated += 1
+    db.commit()
+    return ImportResult(
+        dataset_group=dataset_group, created=created, updated=updated, total=len(records)
+    )
+
+
+def fetch_dataset(group_id: str) -> list[ConversationRecord]:
+    """GET {DATASET_API_URL}?group_id=... — через бэкенд, чтобы не упираться в CORS."""
+    settings = get_settings()
+    if not settings.dataset_api_url:
+        raise AppError("DATASET_API_URL is not configured in .env")
+    try:
+        resp = httpx.get(
+            settings.dataset_api_url,
+            params={"group_id": group_id},
+            timeout=settings.dataset_timeout_seconds,
+            follow_redirects=True,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+    except httpx.HTTPError as exc:
+        raise ExternalServiceError(f"Dataset API is unavailable: {exc}") from exc
+    except ValueError as exc:
+        raise ExternalServiceError("Dataset API returned non-JSON response") from exc
+
+    if not body.get("isSuccess", False):
+        raise ExternalServiceError(f"Dataset API error: {body.get('error') or 'unknown'}")
+    records = (body.get("data") or {}).get("records") or []
+    return [ConversationRecord.model_validate(r) for r in records]
+
+
+def sync_dataset(db: Session, group_id: str) -> ImportResult:
+    return upsert_records(db, group_id, fetch_dataset(group_id))
