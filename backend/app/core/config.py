@@ -39,6 +39,25 @@ class Settings(BaseSettings):
     ai_model: str = "gpt-4o-mini"
     ai_timeout_seconds: float = 60
 
+    # --- CQA: LLM-оценка диалогов ---
+    # Провайдер: "gemini" (реальный вызов) или "mock" (офлайн-заглушка для разработки UI/тестов).
+    # Если GEMINI_API_KEY пуст, автоматически используется mock.
+    llm_provider: Literal["gemini", "mock"] = "gemini"
+    gemini_api_key: str = ""  # задаётся ТОЛЬКО в .env (файл в .gitignore)
+    gemini_model: str = "gemini-3.6-flash"
+    # minimal | low | medium | high — больше «думания» = точнее, но дороже и медленнее
+    gemini_thinking_level: str = "medium"
+    llm_timeout_seconds: float = 120
+    llm_max_retries: int = 3
+    llm_batch_concurrency: int = 4  # параллельных запросов при пакетной оценке
+    # Цены за 1M токенов (USD) — для расчёта стоимости оценки. Thinking-токены = output.
+    llm_price_input_per_1m: float = 1.50
+    llm_price_output_per_1m: float = 7.50
+
+    # API организаторов: GET {dataset_api_url}?group_id=DEV
+    dataset_api_url: str = ""
+    dataset_timeout_seconds: float = 30
+
     frontend_dist: str = str(ROOT_DIR / "frontend" / "dist")
 
     @property

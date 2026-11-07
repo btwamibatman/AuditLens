@@ -8,6 +8,8 @@ os.environ.update(
         "ENABLE_UPLOADS": "false",
         "ENABLE_AI": "true",
         "AI_API_KEY": "",
+        "LLM_PROVIDER": "mock",
+        "GEMINI_API_KEY": "",
         "FRONTEND_DIST": "./__no_dist__",
     }
 )
@@ -18,12 +20,12 @@ from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
-from app.core.db import Base, get_db, import_all_models  # noqa: E402
+from app.core.db import Base, import_all_models  # noqa: E402
 from app.main import create_app  # noqa: E402
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
@@ -31,12 +33,17 @@ def client():
     Base.metadata.create_all(engine)
     TestSession = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
+    import app.core.db as core_db
+
+    monkeypatch.setattr(core_db, "engine", engine)
+    monkeypatch.setattr(core_db, "SessionLocal", TestSession)
+
     def override_get_db():
         with TestSession() as db:
             yield db
 
     app = create_app()
-    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[core_db.get_db] = override_get_db
     with TestClient(app) as c:
         yield c
     Base.metadata.drop_all(engine)

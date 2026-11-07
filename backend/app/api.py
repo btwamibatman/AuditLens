@@ -6,6 +6,10 @@ from sqlalchemy import text
 
 from app.core.config import Settings
 from app.core.db import DbSession
+from app.features.appeals.router import router as appeals_router
+from app.features.checklists.router import router as checklists_router
+from app.features.conversations.router import router as conversations_router
+from app.features.evaluations.router import router as evaluations_router
 from app.features.items.router import router as items_router
 
 
@@ -41,6 +45,10 @@ def build_api_router(settings: Settings) -> APIRouter:
         )
 
     api.include_router(items_router)
+    api.include_router(checklists_router)
+    api.include_router(conversations_router)
+    api.include_router(evaluations_router)
+    api.include_router(appeals_router)
 
     if settings.enable_auth:
         from app.features.auth.router import router as auth_router
