@@ -55,18 +55,39 @@ def review_appeal(db: Session, appeal_id: int, review: AppealReview) -> tuple[Ap
     if evaluation is None:
         raise NotFoundError(f"Evaluation {appeal.evaluation_id} not found")
 
-    appeal.reviewer_comment = review.reviewer_comment
-    appeal.decision = review.decision
-    appeal.status = "confirmed" if review.decision == "confirm" else "overturned"
+    if not review.reviewer_comment.strip():
+        raise AppError("Reviewer comment must not be blank")
 
     if review.decision == "change":
-        appeal.new_score = review.new_score
-        appeal.new_is_na = review.new_is_na
-        appeal.new_critical_violation = review.new_critical_violation
-
-        # Применяем изменение к final_result карточки и пересчитываем итоги
         current = EvaluationResult.model_validate(evaluation.final_result)
         config = ChecklistConfig.model_validate(evaluation.checklist_snapshot)
+        criterion = next((c for c in config.criteria if c.id == appeal.criterion_id), None)
+        if criterion is None or not any(
+            c.criterion_id == appeal.criterion_id for c in current.criteria
+        ):
+            raise NotFoundError(f"Criterion {appeal.criterion_id} not found in this evaluation")
+
+        if review.new_is_na:
+            if not criterion.na_allowed:
+                raise AppError(f"N/A is not allowed for {criterion.id}")
+            if review.new_score is not None or review.new_critical_violation:
+                raise AppError("N/A cannot have a score or a critical violation")
+        else:
+            score = review.new_score
+            allowed = {level.value for level in criterion.scale_levels}
+            if (
+                score is None
+                or not criterion.scale_min <= score <= criterion.scale_max
+                or (criterion.answer_type == "scale" and allowed and score not in allowed)
+            ):
+                raise AppError(f"Invalid score for {criterion.id}")
+            if review.new_critical_violation and not criterion.is_critical:
+                raise AppError(f"Criterion {criterion.id} cannot have a critical violation")
+            if criterion.id == "critical" and criterion.answer_type == "binary":
+                if review.new_critical_violation != bool(score):
+                    raise AppError("Critical score contradicts critical violation flag")
+
+        # Меняем итог только после проверки по сохранённому чек-листу.
         updated_criteria: list[CriterionResult] = []
         for c in current.criteria:
             if c.criterion_id == appeal.criterion_id:
@@ -74,16 +95,25 @@ def review_appeal(db: Session, appeal_id: int, review: AppealReview) -> tuple[Ap
                 c.score = None if review.new_is_na else review.new_score
                 c.critical_violation = review.new_critical_violation
                 c.source = "reviewer"
-                c.explanation = f"ПЕРЕСМОТРЕН ПРО ВЕРЯЮЩИМ: {review.reviewer_comment}"
-                if review.new_is_na:
-                    c.na_reason = review.new_na_reason or review.reviewer_comment
+                c.explanation = f"ПЕРЕСМОТРЕН ПРОВЕРЯЮЩИМ: {review.reviewer_comment}"
+                c.na_reason = (
+                    (review.new_na_reason.strip() or review.reviewer_comment)
+                    if review.new_is_na
+                    else ""
+                )
             updated_criteria.append(c)
 
         recalculated = compute_totals(updated_criteria, config.scoring, current.summary)
         evaluation.final_result = recalculated.model_dump(mode="json")
         evaluation.total_score = recalculated.total
         evaluation.has_critical_error = recalculated.has_critical_error
+        appeal.new_score = review.new_score
+        appeal.new_is_na = review.new_is_na
+        appeal.new_critical_violation = review.new_critical_violation
 
+    appeal.reviewer_comment = review.reviewer_comment
+    appeal.decision = review.decision
+    appeal.status = "confirmed" if review.decision == "confirm" else "overturned"
     db.commit()
     db.refresh(appeal)
     db.refresh(evaluation)

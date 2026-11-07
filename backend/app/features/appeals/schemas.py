@@ -17,7 +17,7 @@ class AppealReview(BaseModel):
     decision: Decision
     reviewer_comment: str = Field(min_length=1, max_length=2000)
     # Заполняется только если decision == "change":
-    new_score: int | None = None
+    new_score: int | None = Field(default=None, strict=True)
     new_is_na: bool = False
     new_na_reason: str = ""
     new_critical_violation: bool = False
