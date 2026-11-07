@@ -27,7 +27,7 @@ class Criterion(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     section: str | None = Field(default=None, description="Секция для промежуточных итогов")
     description: str = Field(min_length=1, description="Что проверяем (формулировка для модели)")
-    weight: float = Field(gt=0)
+    weight: float = Field(ge=0)
     answer_type: AnswerType = "binary"
     # Для binary шкала всегда 0..1 (0 = нет, 1 = да)
     scale_min: int = 0
