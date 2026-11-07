@@ -1,5 +1,5 @@
 import { fileURLToPath, URL } from 'node:url'
-import vue from '@vitejs/plugin-vue'
+import tailwindcss from '@tailwindcss/vite'
 import { defineConfig, loadEnv } from 'vite'
 
 export default defineConfig(({ mode }) => {
@@ -8,7 +8,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     envDir: '..',
-    plugins: [vue()],
+    plugins: [tailwindcss()],
     resolve: {
       alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
     },
