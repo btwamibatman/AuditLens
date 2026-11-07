@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     # Если GEMINI_API_KEY пуст, автоматически используется mock.
     llm_provider: Literal["gemini", "mock"] = "gemini"
     gemini_api_key: str = ""  # задаётся ТОЛЬКО в .env (файл в .gitignore)
-    gemini_model: str = "gemini-3.6-flash"
+    gemini_model: str = "gemini-3.5-flash-lite"
     # minimal | low | medium | high — больше «думания» = точнее, но дороже и медленнее
     gemini_thinking_level: str = "medium"
     llm_timeout_seconds: float = 120
