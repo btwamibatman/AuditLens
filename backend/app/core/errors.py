@@ -39,6 +39,11 @@ class ExternalServiceError(AppError):
     default_message = "External service error"
 
 
+class BusyError(AppError):
+    status_code = 429
+    default_message = "Сервер занят обработкой диалогов. Повторите запрос позже."
+
+
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _handle_app_error(_: Request, exc: AppError) -> JSONResponse:

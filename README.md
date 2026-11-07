@@ -61,6 +61,32 @@ scripts/                   Cross-platform setup and development commands
 
 ## Configuration
 
+### Evaluation capacity
+
+`LLM_BATCH_CONCURRENCY` is the shared limit for simultaneous evaluations in one backend
+process, including single requests and batch workers (default 4). It is read at startup;
+restart the backend after changing it. Only one batch can run in that process at a time.
+
+| Request | Success | Busy response |
+| --- | --- | --- |
+| `POST /api/evaluations` | `201`, completed evaluation | `429`, code `evaluation_busy` |
+| `POST /api/evaluations/batch` | `202`, job ID | `409`, code `batch_already_running` |
+
+Busy responses use the existing `{detail, code}` error object. Show `detail` and allow
+a later manual retry; do not automatically repeat AI requests. A rejected single
+request creates no evaluation and makes no model call. A second batch is rejected
+before another worker pool is created. An accepted batch waits for capacity using
+only its fixed worker threads; its records are not marked failed because slots are busy.
+Status and other API requests remain available while the provider is waiting.
+
+Run one server worker and one application instance for this guarantee. The production
+start commands explicitly use `--workers 1`. Separate CLI processes, server workers,
+or replicas have independent limits; do not run an evaluation CLI alongside the server
+and expect them to share capacity. This is not a distributed queue. Batch progress
+still lives in memory and is lost on restart, while committed evaluations remain in
+the database. Overall AI deadlines, cancellation, and automatic recovery are separate
+work; this limit does not interrupt a hung provider call.
+
 ### Official CQA results export
 
 Export saved database evaluations with `python -m app.features.evaluations.export` from

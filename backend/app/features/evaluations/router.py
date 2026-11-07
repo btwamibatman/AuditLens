@@ -16,13 +16,19 @@ from app.features.evaluations.schemas import (
 router = APIRouter(prefix="/evaluations", tags=["evaluations"])
 
 
-@router.post("", response_model=EvaluationRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "", response_model=EvaluationRead, status_code=status.HTTP_201_CREATED,
+    responses={429: {"description": "Все слоты оценки заняты; повторите запрос позже."}},
+)
 def evaluate(data: EvaluateRequest, db: DbSession):
     """Синхронная оценка одного диалога (обычно 5–30 c в зависимости от модели)."""
     return service.evaluate(db, data.conversation_id, data.checklist_id)
 
 
-@router.post("/batch", response_model=BatchStatus, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/batch", response_model=BatchStatus, status_code=status.HTTP_202_ACCEPTED,
+    responses={409: {"description": "Пакетная обработка уже идёт."}},
+)
 def start_batch(data: BatchRequest, db: DbSession):
     """Фоновая оценка набора (напр. контрольных диалогов). Прогресс: GET /batch/{id}."""
     ids, checklist_id = service.resolve_batch_targets(db, data)

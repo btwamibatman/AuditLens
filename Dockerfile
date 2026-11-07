@@ -31,4 +31,4 @@ EXPOSE 8000
 
 WORKDIR /app/backend
 
-CMD ["sh", "-c", "python -m alembic upgrade head && python -m app.seed && python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]
+CMD ["sh", "-c", "python -m alembic upgrade head && python -m app.seed && python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT} --workers 1"]

@@ -21,6 +21,6 @@
     "lint": "node scripts/py.mjs -m ruff check . && npm --prefix frontend run typecheck",
     "format": "node scripts/py.mjs -m ruff format . && node scripts/py.mjs -m ruff check --fix .",
     "build": "npm --prefix frontend run build",
-    "start": "npm run build && node scripts/py.mjs -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    "start": "npm run build && node scripts/py.mjs -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1"
   }
 }

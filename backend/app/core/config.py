@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     gemini_thinking_level: str = "medium"
     llm_timeout_seconds: float = 120
     llm_max_retries: int = 3
-    llm_batch_concurrency: int = 4  # параллельных запросов при пакетной оценке
+    llm_batch_concurrency: int = 4  # общий предел оценок на процесс: batch + одиночные
     # Цены за 1M токенов (USD) — для расчёта стоимости оценки. Thinking-токены = output.
     llm_price_input_per_1m: float = 1.50
     llm_price_output_per_1m: float = 7.50

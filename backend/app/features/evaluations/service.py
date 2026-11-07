@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.db import SessionLocal
-from app.core.errors import AppError, ExternalServiceError, NotFoundError
+from app.core.errors import AppError, BusyError, ConflictError, ExternalServiceError, NotFoundError
 from app.features.checklists import service as checklist_service
 from app.features.checklists.models import Checklist
 from app.features.checklists.schemas import ChecklistConfig, Criterion
@@ -35,6 +35,9 @@ from app.features.evaluations.schemas import (
 from app.features.evaluations.scoring import compute_totals
 
 log = logging.getLogger(__name__)
+
+# Один общий предел на процесс; HTTP-запросы не ждут освобождения слота.
+_evaluation_slots = threading.BoundedSemaphore(max(1, get_settings().llm_batch_concurrency))
 
 
 # ---------------------------------------------------------------- подготовка
@@ -241,7 +244,19 @@ def _resolve_checklist(db: Session, checklist_id: int | None) -> Checklist:
     return checklist_service.get_checklist(db, checklist_id)
 
 
-def evaluate(db: Session, conversation_id: str, checklist_id: int | None = None) -> Evaluation:
+def evaluate(
+    db: Session, conversation_id: str, checklist_id: int | None = None,
+    *, wait_for_slot: bool = False,
+) -> Evaluation:
+    if not _evaluation_slots.acquire(blocking=wait_for_slot):
+        raise BusyError(code="evaluation_busy")
+    try:
+        return _evaluate(db, conversation_id, checklist_id)
+    finally:
+        _evaluation_slots.release()
+
+
+def _evaluate(db: Session, conversation_id: str, checklist_id: int | None = None) -> Evaluation:
     conv = conversation_service.get_conversation(db, conversation_id)
     checklist = _resolve_checklist(db, checklist_id)
     config = checklist_service.parse_config(checklist)
@@ -354,6 +369,15 @@ def list_evaluations(
 
 _jobs: dict[str, BatchStatus] = {}
 _jobs_lock = threading.Lock()
+_batch_slot = threading.Lock()
+
+
+def _reserve_batch() -> None:
+    if not _batch_slot.acquire(blocking=False):
+        raise ConflictError(
+            "Пакетная обработка уже идёт. Дождитесь её завершения.",
+            code="batch_already_running",
+        )
 
 
 def resolve_batch_targets(db: Session, req: BatchRequest) -> tuple[list[str], int]:
@@ -383,11 +407,21 @@ def resolve_batch_targets(db: Session, req: BatchRequest) -> tuple[list[str], in
 
 def _evaluate_isolated(conversation_id: str, checklist_id: int) -> tuple[int, float]:
     with SessionLocal() as db:  # отдельная сессия на поток
-        ev = evaluate(db, conversation_id, checklist_id)
+        ev = evaluate(db, conversation_id, checklist_id, wait_for_slot=True)
         return ev.id, ev.cost_usd
 
 
 def run_batch(
+    conversation_ids: list[str], checklist_id: int, job: BatchStatus | None = None, on_progress=None
+) -> BatchStatus:
+    _reserve_batch()
+    try:
+        return _run_batch(conversation_ids, checklist_id, job, on_progress)
+    finally:
+        _batch_slot.release()
+
+
+def _run_batch(
     conversation_ids: list[str], checklist_id: int, job: BatchStatus | None = None, on_progress=None
 ) -> BatchStatus:
     job = job or BatchStatus(
@@ -415,11 +449,13 @@ def run_batch(
                     job.errors[cid] = str(exc)[:500]
             if on_progress:
                 on_progress(cid, job)
-    job.status = "done" if job.done else "failed"
+    with _jobs_lock:
+        job.status = "done" if job.done else "failed"
     return job
 
 
 def start_batch_job(conversation_ids: list[str], checklist_id: int) -> BatchStatus:
+    _reserve_batch()
     job = BatchStatus(
         job_id=uuid.uuid4().hex[:12],
         status="running",
@@ -432,17 +468,27 @@ def start_batch_job(conversation_ids: list[str], checklist_id: int) -> BatchStat
 
     def _runner():
         try:
-            run_batch(conversation_ids, checklist_id, job)
+            _run_batch(conversation_ids, checklist_id, job)
         except Exception as exc:  # noqa: BLE001
-            job.status = "failed"
-            job.errors["_batch"] = str(exc)
+            with _jobs_lock:
+                job.status = "failed"
+                job.errors["_batch"] = str(exc)
+        finally:
+            _batch_slot.release()
 
-    threading.Thread(target=_runner, daemon=True, name=f"batch-{job.job_id}").start()
-    return job
+    try:
+        threading.Thread(target=_runner, daemon=True, name=f"batch-{job.job_id}").start()
+    except Exception:
+        with _jobs_lock:
+            _jobs.pop(job.job_id, None)
+        _batch_slot.release()
+        raise
+    return get_batch_job(job.job_id)
 
 
 def get_batch_job(job_id: str) -> BatchStatus:
-    job = _jobs.get(job_id)
-    if job is None:
-        raise NotFoundError(f"Batch job {job_id} not found")
-    return job
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if job is None:
+            raise NotFoundError(f"Batch job {job_id} not found")
+        return job.model_copy(deep=True)
