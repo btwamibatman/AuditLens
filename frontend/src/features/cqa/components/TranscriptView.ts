@@ -144,9 +144,7 @@ export function renderTranscriptView(container: HTMLElement) {
                     </span>
                   </div>
 
-                  <div class="text-[14.5px] text-slate-800 dark:text-slate-100 leading-relaxed whitespace-pre-wrap font-normal">
-                    ${escapeHtml(u.text)}
-                  </div>
+                  <div class="text-[14.5px] text-slate-800 dark:text-slate-100 leading-relaxed whitespace-pre-wrap font-normal">${escapeHtml(u.text)}</div>
                 </div>
               `
             })

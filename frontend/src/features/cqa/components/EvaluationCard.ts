@@ -64,7 +64,7 @@ export function renderEvaluationCard(container: HTMLElement) {
               </label>
               <select
                 id="cqa-checklist-select"
-                class="text-xs py-2 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 flex-1 max-w-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+                class="text-xs py-2 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 flex-1 min-w-0 w-full max-w-xs truncate focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
               >
                 ${state.checklists
                   .map(

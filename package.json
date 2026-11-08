@@ -2,7 +2,7 @@
   "name": "auditlens",
   "version": "0.1.0",
   "private": true,
-  "description": "Reusable FastAPI + Vue 3 fullstack project template",
+  "description": "AuditLens: AI-оценка качества диалогов операторов поддержки по настраиваемому чек-листу (CQA Hackathon)",
   "engines": {
     "node": ">=20.19"
   },

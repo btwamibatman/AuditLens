@@ -1,7 +1,7 @@
 [project]
 name = "auditlens-backend"
 version = "0.1.0"
-description = "FastAPI backend for AuditLens hackathon starter"
+description = "AuditLens CQA backend: LLM evaluation of support conversations, appeals and official export"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi[standard]>=0.115.0", # включает uvicorn, httpx, python-multipart, email-validator

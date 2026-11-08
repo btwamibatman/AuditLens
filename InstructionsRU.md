@@ -1,79 +1,43 @@
-# AuditLens — инструкция на русском
+# AuditLens — краткая памятка по запуску и демонстрации
 
-AuditLens — стартовый full-stack шаблон: Vue 3 + TypeScript на фронтенде и FastAPI на бэкенде. Это каркас для новых приложений, а не готовый таск-трекер. Экран CRUD служит примером: замени его сущностью своего проекта.
+> Полное описание проекта, архитектуры и результатов — в **[README.md](README.md)**.
+> Подробный регламент пакетного запуска и официального экспорта — в **[docs/RUNBOOK.md](docs/RUNBOOK.md)**.
 
-## Быстрый запуск
+## 1. Запуск в Docker (рекомендуется для демонстрации)
 
-Нужны Node.js 20.19+, Python 3.11+ и Git. В корне репозитория:
+```powershell
+Copy-Item .env.example .env   # при первом запуске; укажите GEMINI_API_KEY в .env
+docker compose up -d --build
+```
+
+- Интерфейс и API: `http://localhost:8000`
+- Swagger UI: `http://localhost:8000/api/docs`
+- Healthcheck: `http://localhost:8000/api/health`
+
+## 2. Локальный запуск для разработки
+
+Требования: Node.js 20.19+, Python 3.11+ (рекомендуется `uv`).
 
 ```powershell
 npm run setup
 npm run dev
 ```
 
-Откройте `http://localhost:5173`. API работает на `http://localhost:8000`, документация Swagger — `http://localhost:8000/api/docs`.
+- Frontend (Vite): `http://localhost:5173`
+- Backend (FastAPI): `http://localhost:8000`
 
-`npm run setup` создаёт Python-окружение, устанавливает зависимости, копирует `.env.example` в `.env`, применяет миграции и устанавливает пакеты Vue.
+## 3. Сценарий защиты (5 минут)
 
-## Создание проекта из шаблона GitHub
+1. **Диалоги и транскрипт (1 мин):** выберите диалог из набора `DEV` (фильтры по языку `RU`/`KZ`/`EN`, каналу `Чат`/`Звонок`, фокусу `Critical`/`Апелляции`). Для звонков доступен аудиоплеер.
+2. **Оценка и доказательства (2 мин):** откройте карточку оценки, покажите расчёт итогового балла с перераспределением веса `N/A`, кликните на реплику-доказательство для перехода к сообщению в транскрипте.
+3. **Апелляция и решение (1 мин):** нажмите «Оспорить оценку» у критерия, отправьте комментарий, затем примите решение проверяющего (`Подтвердить` или `Изменить` с обязательной причиной) и покажите пересчитанный финальный балл рядом с исходной AI-оценкой.
+4. **Редактор чек-листа (1 мин):** перейдите в «Редактор чек-листа», измените критерий или вес, сохраните новую версию конфигурации и запустите оценку диалога по обновлённому чек-листу.
 
-На странице AuditLens нажмите **Use this template → Create a new repository**. Выберите имя и видимость нового репозитория. GitHub создаст проект из текущих файлов, без истории коммитов AuditLens.
-
-Для локального старта:
-
-```powershell
-git clone https://github.com/<ваш-аккаунт>/<ваш-репозиторий>.git
-cd <папка-проекта>
-npm run setup
-npm run dev
-```
-
-## Что поменять в новом проекте
-
-1. В `.env` поменяйте `APP_NAME`, при необходимости настройки базы и feature flags.
-2. Замените пример `items` на предметную область проекта: backend-модуль находится в `backend/app/features/items`, Vue-экран — в `frontend/src/App.vue`.
-3. Новую бизнес-логику добавляйте отдельным модулем в `backend/app/features/<название>` и подключайте router в `backend/app/api.py`.
-4. Vue-страницы и компоненты создавайте в `frontend/src` как `.vue` Single-File Components. Общий HTTP-клиент уже есть в `frontend/src/lib/api.ts`.
-5. После изменений моделей создайте миграцию и примените её:
+## 4. Полезные команды
 
 ```powershell
-npm run db:revision -- "описание_изменения"
-npm run db:migrate
+npm run lint        # Проверка Ruff (backend) + TypeScript (frontend)
+npm run test        # Полный прогон backend-тестов (193 теста, без платных AI-вызовов)
+npm run test:gemini # Проверка подключения к Gemini API на 1 тестовом диалоге
+npm run build       # Сборка фронтенда
 ```
-
-## Опциональные примеры
-
-По умолчанию auth, AI и загрузка файлов отключены. Включите нужные модули в `.env`:
-
-```dotenv
-ENABLE_AUTH=true
-ENABLE_AI=true
-AI_BASE_URL=https://api.openai.com/v1
-AI_API_KEY=...
-AI_MODEL=...
-ENABLE_UPLOADS=true
-```
-
-AI API совместим с OpenAI API; можно указать endpoint другого совместимого провайдера. Auth требует настроенного `SECRET_KEY`. Для локального диска загрузок используется `UPLOAD_DIR`.
-
-## Команды
-
-```powershell
-npm run dev        # Frontend и API вместе
-npm run dev:web    # Только Vite/Vue
-npm run dev:api    # Только FastAPI
-npm run db:migrate # Применить миграции
-npm run db:seed    # Добавить демонстрационные записи
-npm run lint       # Ruff и проверка типов Vue/TypeScript
-npm run test       # Backend-тесты
-npm run build      # Проверка типов и production-сборка Vue
-npm run start      # Собрать frontend и раздавать через FastAPI
-```
-
-Docker:
-
-```powershell
-docker compose up --build
-```
-
-Не коммитьте `.env`, секреты, локальную базу, загруженные файлы и `node_modules`.
