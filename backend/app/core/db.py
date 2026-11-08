@@ -39,9 +39,14 @@ def make_engine(url: str):
     kwargs: dict = {"pool_pre_ping": True}
     if url.startswith("sqlite"):
         kwargs["connect_args"] = {"check_same_thread": False}
-        path = url.split("///", 1)[-1] if "///" in url else ""
-        if path and path != ":memory:":
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
+        path_str = url.split("///", 1)[-1] if "///" in url else ""
+        if path_str and path_str != ":memory:":
+            p = Path(path_str)
+            if not p.is_absolute():
+                backend_dir = Path(__file__).resolve().parents[2]
+                p = (backend_dir / path_str).resolve()
+                url = f"sqlite:///{p.as_posix()}"
+            p.parent.mkdir(parents=True, exist_ok=True)
     return create_engine(url, **kwargs)
 
 

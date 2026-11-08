@@ -29,7 +29,7 @@ def main():
         checklist_id = checklist.id
 
     print(f"Используется чек-лист ID={checklist_id} (версия {checklist.version})")
-    print("Начинаем последовательную оценку с паузой 4.5с между запросами...")
+    print("Начинаем последовательную оценку с паузой 5с между запросами...")
 
     for i, cid in enumerate(failed_ids, 1):
         print(f"  [{i}/{len(failed_ids)}] Оценка {cid}...", end=" ", flush=True)
@@ -40,7 +40,7 @@ def main():
         except Exception as exc:
             print(f"ERR: {exc}")
         if i < len(failed_ids):
-            time.sleep(4.5)
+            time.sleep(5)
 
     print("\nСбор актуальных ID для всех 65 диалогов DEV...")
     with open(ROOT_DIR / "docs" / "invoke.json", encoding="utf-8") as f:
