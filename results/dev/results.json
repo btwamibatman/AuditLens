@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "team_name": "AuditLens",
+  "team_name": "Revenant",
   "model": {
     "mode": "external_api",
     "name": "gemini-3.5-flash-lite"
