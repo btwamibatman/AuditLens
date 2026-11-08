@@ -61,7 +61,9 @@ def split_criteria(
 def build_prompt(conv: Conversation, config: ChecklistConfig) -> PromptPreview:
     llm_criteria, auto_na = split_criteria(config, conv.channel)
     return PromptPreview(
-        system_instruction=prompt_builder.build_system_instruction(config, llm_criteria),
+        system_instruction=prompt_builder.build_system_instruction(
+            config, llm_criteria, is_call=conversation_service.is_call(conv.channel)
+        ),
         input=prompt_builder.build_input(
             conversation_id=conv.id,
             channel=conv.channel,

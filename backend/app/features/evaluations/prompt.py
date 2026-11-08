@@ -5,6 +5,26 @@ from app.features.checklists.schemas import ChecklistConfig, Criterion
 
 LANGUAGE_NAMES = {"ru": "Russian", "en": "English", "kk": "Kazakh", "kz": "Kazakh"}
 
+CALL_TRANSCRIPT_GUIDANCE = """\
+# Voice-call assessment (transcript only)
+You have only the supplied text transcript. An audio link is not evidence that you have \
+listened to a recording. Do not claim to assess pronunciation, diction, speech rate, intonation \
+or other acoustic properties from text.
+When applying communication criteria to a call, assess the observable spoken equivalents: \
+logical turn-taking, understandable explanations, appropriate expressions and word choice, \
+and management of stated holds or pauses. Avoid attributing punctuation or capitalization \
+introduced by transcription to the operator; judge the wording and sequence supported by the text.
+For holds and pauses, use explicit transcript markers or speaker statements. A gap between \
+message timestamps alone does not establish silence, its duration or poor hold management. \
+Do not invent waiting-time thresholds; apply only requirements in the configured checklist.
+Keep the configured criterion IDs, descriptions, scale levels, weights and N/A conditions. \
+Absence of audio is not itself a failed criterion or an N/A condition. If an acoustic property \
+cannot be verified, state that evidence limit in the explanation without inventing a finding.
+Cite verbatim transcript fragments using the original message indexes, including all roles, \
+and keep original timestamps. ISO timestamps are not recording offsets: do not invent audio \
+seek positions or sound-based evidence.\
+"""
+
 SYSTEM_TEMPLATE = """\
 You are a senior Quality Assurance analyst at a contact center. You evaluate the work of a \
 human support OPERATOR in one conversation against a configurable checklist, exactly like a \
@@ -76,16 +96,19 @@ def _criterion_block(c: Criterion) -> str:
     return "\n".join(lines)
 
 
-def build_system_instruction(config: ChecklistConfig, criteria: list[Criterion]) -> str:
+def build_system_instruction(
+    config: ChecklistConfig, criteria: list[Criterion], *, is_call: bool = False
+) -> str:
     language = LANGUAGE_NAMES.get(config.explanation_language.lower(), config.explanation_language)
     company = (
         f"\n# Company context\n{config.evaluator_notes.strip()}\n" if config.evaluator_notes else ""
     )
-    return SYSTEM_TEMPLATE.format(
+    instruction = SYSTEM_TEMPLATE.format(
         explanation_language=language,
         company_context=company,
         criteria_block="\n\n".join(_criterion_block(c) for c in criteria),
     )
+    return f"{instruction}\n{CALL_TRANSCRIPT_GUIDANCE}" if is_call else instruction
 
 
 def render_transcript(transcript: list[dict]) -> str:
