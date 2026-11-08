@@ -107,7 +107,7 @@ export function renderConversationList(container: HTMLElement) {
             <input
               id="cqa-search-input"
               type="text"
-              placeholder="Поиск по ID диалога"
+              placeholder="Поиск по ID или набору (Swap, FBroker...)"
               class="flex text-sm px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
             />
             <button
@@ -306,7 +306,10 @@ export function renderConversationList(container: HTMLElement) {
       if (state.statusFilter === 'APPEALS' && !appealConvIds.has(c.id)) return false
       if (state.searchQuery.trim()) {
         const q = state.searchQuery.toLowerCase()
-        return c.id.toLowerCase().includes(q)
+        return (
+          c.id.toLowerCase().includes(q) ||
+          (c.dataset_group && c.dataset_group.toLowerCase().includes(q))
+        )
       }
       return true
     })
