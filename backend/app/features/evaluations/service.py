@@ -504,8 +504,13 @@ def _reserve_batch() -> None:
         )
 
 
-def resolve_batch_targets(db: Session, req: BatchRequest) -> tuple[list[str], int]:
-    checklist = _resolve_checklist(db, req.checklist_id)
+def resolve_batch_targets(
+    db: Session, req: BatchRequest, *,
+    pinned_checklist: PinnedChecklist | None = None, allow_empty: bool = False,
+) -> tuple[list[str], int]:
+    checklist_id, checklist_version, _ = (
+        pinned_checklist or _snapshot_checklist(req.checklist_id, db)
+    )
     if req.conversation_ids:
         ids = list(dict.fromkeys(req.conversation_ids))
     else:
@@ -517,16 +522,16 @@ def resolve_batch_targets(db: Session, req: BatchRequest) -> tuple[list[str], in
         done = set(
             db.scalars(
                 select(Evaluation.conversation_id).where(
-                    Evaluation.checklist_id == checklist.id,
-                    Evaluation.checklist_version == checklist.version,
+                    Evaluation.checklist_id == checklist_id,
+                    Evaluation.checklist_version == checklist_version,
                     Evaluation.status == "done",
                 )
             )
         )
         ids = [i for i in ids if i not in done]
-    if not ids:
+    if not ids and not allow_empty:
         raise AppError("No conversations to evaluate")
-    return ids, checklist.id
+    return ids, checklist_id
 
 
 def _evaluate_isolated(

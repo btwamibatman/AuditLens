@@ -1,5 +1,10 @@
 import html as html_lib
+import json
+import logging
 import re
+from contextvars import ContextVar
+from pathlib import Path
+from urllib.parse import unquote_plus, urlencode
 
 import httpx
 from pydantic import ValidationError
@@ -10,6 +15,18 @@ from app.core.config import get_settings
 from app.core.errors import AppError, ExternalServiceError, NotFoundError
 from app.features.conversations.models import Conversation
 from app.features.conversations.schemas import ConversationRecord, ImportResult
+
+_fetching_dataset = ContextVar("fetching_dataset", default=False)
+
+
+class _DatasetRequestLogFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        # HTTPX пишет полный request.url на INFO, в том числе при редиректах.
+        # Подавляем только запрос набора в текущем контексте, не другие потоки.
+        return not _fetching_dataset.get()
+
+
+logging.getLogger("httpx").addFilter(_DatasetRequestLogFilter())
 
 
 def is_call(channel: str) -> bool:
@@ -75,28 +92,46 @@ def upsert_records(
     )
 
 
-def fetch_dataset(group_id: str) -> list[ConversationRecord]:
+def fetch_dataset(group_id: str, *, save_to: Path | None = None) -> list[ConversationRecord]:
     """GET {DATASET_API_URL}?group_id=... — через бэкенд, чтобы не упираться в CORS."""
     settings = get_settings()
     if not settings.dataset_api_url:
         raise AppError("DATASET_API_URL is not configured in .env")
+    url = httpx.URL(settings.dataset_api_url)
+    # Остальные параметры оставляем байт-в-байт: повторные ключи, пустые значения,
+    # регистр percent-encoding и подпись не должны меняться при подстановке группы.
+    replacement = urlencode({"group_id": group_id}).encode("ascii")
+    parts = []
+    for part in (url.query.split(b"&") if url.query else []):
+        if unquote_plus(part.split(b"=", 1)[0].decode("ascii")) != "group_id":
+            parts.append(part)
+        elif replacement is not None:
+            parts.append(replacement)
+            replacement = None
+    if replacement is not None:
+        parts.append(replacement)
+    url = url.copy_with(query=b"&".join(parts))
+    token = _fetching_dataset.set(True)
     try:
-        resp = httpx.get(
-            settings.dataset_api_url,
-            params={"group_id": group_id},
-            timeout=settings.dataset_timeout_seconds,
-            follow_redirects=True,
-        )
-        resp.raise_for_status()
-        body = resp.json()
-    except httpx.HTTPError as exc:
-        raise ExternalServiceError(f"Dataset API is unavailable: {exc}") from exc
-    except ValueError as exc:
-        raise ExternalServiceError("Dataset API returned non-JSON response") from exc
+        try:
+            resp = httpx.get(
+                url,
+                timeout=settings.dataset_timeout_seconds,
+                follow_redirects=True,
+            )
+            resp.raise_for_status()
+            body = resp.json()
+        except httpx.HTTPError:
+            # Не включать exc и его цепочку: HTTPError содержит подписанный URL.
+            raise ExternalServiceError("Dataset API is unavailable") from None
+        except ValueError:
+            raise ExternalServiceError("Dataset API returned non-JSON response") from None
+    finally:
+        _fetching_dataset.reset(token)
 
     if not isinstance(body, dict) or not body.get("isSuccess", False):
-        err_msg = body.get("error") if isinstance(body, dict) else "invalid response structure"
-        raise ExternalServiceError(f"Dataset API error: {err_msg or 'unknown'}")
+        # Upstream error тоже может содержать подписанный URL.
+        raise ExternalServiceError("Dataset API reported an unsuccessful response")
 
     data = body.get("data")
     if not isinstance(data, dict):
@@ -117,10 +152,17 @@ def fetch_dataset(group_id: str) -> list[ConversationRecord]:
 
     try:
         parsed = [ConversationRecord.model_validate(r) for r in records]
-    except ValidationError as exc:
-        raise ExternalServiceError(f"Dataset API returned invalid record: {exc}") from exc
+    except ValidationError:
+        raise ExternalServiceError("Dataset API returned invalid record") from None
 
     _validate_unique_records(parsed)
+    if save_to is not None:
+        save_to.parent.mkdir(parents=True, exist_ok=True)
+        # Сохраняем исходную обёртку после валидации, не реконструируем набор из БД.
+        # Уже существующие исходные данные не перезаписываем.
+        with save_to.open("x", encoding="utf-8") as f:
+            json.dump(body, f, ensure_ascii=False, indent=2)
+            f.write("\n")
     return parsed
 
 

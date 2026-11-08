@@ -2,8 +2,11 @@
 
 import copy
 import json
+import logging
+import sys
 import threading
 import time
+import traceback
 from types import SimpleNamespace
 
 import httpx
@@ -14,10 +17,12 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core import db as core_db
 from app.core.config import get_settings
+from app.core.errors import ExternalServiceError
 from app.features.checklists.defaults import default_checklist_config
 from app.features.checklists.service import ensure_default
 from app.features.conversations.models import Conversation
-from app.features.evaluations import export, service
+from app.features.conversations.service import fetch_dataset
+from app.features.evaluations import batch, export, service
 from app.features.evaluations.llm import LLMResult
 from app.features.evaluations.models import Evaluation
 from app.features.evaluations.schemas import BatchRequest
@@ -397,3 +402,264 @@ def test_batch_sqlite_parallel_writes_partial_failure_only_missing_and_restart_r
             ),
         )
     assert len(targets_v2) == 10
+
+
+@pytest.mark.parametrize("group", ["DEV", "control-42 / ҚАЗ+EN"])
+@pytest.mark.parametrize("failure", [None, "http", "timeout", "upstream"])
+@pytest.mark.parametrize("old_group", ["", "&group_id=old&group_id=older"])
+def test_signed_dataset_request_preserves_raw_query_and_does_not_log_url(
+    monkeypatch, caplog, group, failure, old_group,
+):
+    query = "api-version=1&sp=%2fworkflows%2Fread&sig=secret%2B%2f%3d&empty=&tag=a+%20b&tag=2"
+    signed_url = f"https://dataset.example.test/invoke?{query}{old_group}"
+    monkeypatch.setattr(get_settings(), "dataset_api_url", signed_url)
+    seen = []
+    payload = {
+        "isSuccess": failure != "upstream", "error": signed_url,
+        "data": {"dataset_group_id": group, "total_records": 1,
+                 "records": [_sample_record("signed-test")]},
+    }
+
+    def handle(request):
+        seen.append(request)
+        assert request.url.params.get_list("group_id") == [group]
+        assert request.url.query.startswith((query + "&group_id=").encode("ascii"))
+        if failure == "timeout":
+            raise httpx.ReadTimeout(f"Unavailable: {signed_url}", request=request)
+        return httpx.Response(403 if failure == "http" else 200, json=payload)
+
+    def fake_get(url, **kwargs):
+        assert "params" not in kwargs
+        with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+            return client.get(url, **kwargs)
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    caplog.set_level(logging.DEBUG)
+    if failure:
+        with pytest.raises(ExternalServiceError) as exc:
+            fetch_dataset(group)
+        assert "secret" not in str(exc.value)
+        assert "secret" not in "".join(traceback.format_exception(exc.value))
+        assert exc.value.__suppress_context__ or exc.value.__context__ is None
+    else:
+        assert fetch_dataset(group)[0].conversation_id == "signed-test"
+    assert len(seen) == 1
+    assert "secret" not in caplog.text and signed_url not in caplog.text
+    # Фильтр не отключает логирование прочих HTTP-запросов после загрузки набора.
+    logging.getLogger("httpx").info("unrelated request is still logged")
+    assert "unrelated request is still logged" in caplog.text
+
+
+def test_cli_sync_batch_id_file_and_official_export_use_exact_run(
+    b6_env, tmp_path, monkeypatch, capsys,
+):
+    group = "control-arbitrary-42"
+    records = [_sample_record(f"control-{i}") for i in range(10)]
+    dataset = {"error": None, "isSuccess": True, "data": {
+        "dataset_group_id": group, "total_records": 10, "records": records,
+    }}
+    monkeypatch.setattr(batch, "SessionLocal", b6_env.sessions)
+    monkeypatch.setattr(export, "SessionLocal", b6_env.sessions)
+    monkeypatch.setattr(export, "ROOT_DIR", tmp_path / "official")
+    calls = []
+    failing = set()
+
+    class OfflineProvider:
+        name = model = "offline-cli-test"
+
+        def generate(self, *, system_instruction, input_text, schema):
+            cid = input_text.splitlines()[0].removeprefix("Conversation ID: ")
+            calls.append(cid)
+            return LLMResult(
+                text="invalid" if cid in failing else _valid_llm_json(), model=self.model,
+            )
+
+    monkeypatch.setattr(service, "get_provider", lambda: OfflineProvider())
+    monkeypatch.setattr(batch, "get_provider", lambda: OfflineProvider())
+
+    def run_cli(directory, *args):
+        monkeypatch.setattr(sys, "argv", [
+            "batch", "--group", group, "--output-dir", str(directory), *args,
+        ])
+        result = batch.main()
+        return result, capsys.readouterr().out
+
+    def fake_get(url, **kwargs):
+        return httpx.Response(200, json=dataset, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    source_dir = tmp_path / "source"
+    code, output = run_cli(source_dir, "--sync", "--sync-only")
+    assert code == 0 and not calls
+    assert str(source_dir / "dataset.json") in output
+    assert json.loads((source_dir / "dataset.json").read_text(encoding="utf-8")) == dataset
+
+    # Старые успехи нельзя подставлять вместо новой ошибки.
+    with b6_env.sessions() as db:
+        old = service.evaluate(db, records[1]["conversation_id"], b6_env.checklist_id).id
+    failing.add(records[0]["conversation_id"])
+    run_dir = tmp_path / "run"
+    code, output = run_cli(run_dir)
+    assert code == 1 and "Unprocessed conversations (no result from this run): []" in output
+    assert "Coverage complete" in output
+    assert f"Checklist ID: {b6_env.checklist_id} | version: 1" in output
+    assert str(run_dir / "evaluation-ids.json") in output
+    selected = json.loads((run_dir / "evaluation-ids.json").read_text())
+    assert len(selected) == len(set(selected)) == 10 and old not in selected
+    with b6_env.sessions() as db:
+        rows = [db.get(Evaluation, i) for i in selected]
+        assert sum(r.status == "done" for r in rows) == 9
+        assert sum(r.status == "failed" for r in rows) == 1
+        db.add(Evaluation(
+            conversation_id=records[1]["conversation_id"], checklist_id=rows[0].checklist_id,
+            checklist_version=1, checklist_snapshot=rows[0].checklist_snapshot,
+            status="failed", error="Not selected", model="later-unselected",
+        ))
+        db.commit()
+
+    def official(directory):
+        monkeypatch.setattr(sys, "argv", [
+            "export", "--kind", "prod", "--group", group,
+            "--dataset", str(source_dir / "dataset.json"),
+            "--evaluation-ids", str(directory / "evaluation-ids.json"),
+            "--checklist-id", str(b6_env.checklist_id), "--checklist-version", "1",
+            "--source", "ai", "--team", "Тест", "--model-mode", "external_api",
+        ])
+        export.main()
+
+    official(run_dir)
+    target = export.ROOT_DIR / "results" / "prod" / "results.json"
+    exported = json.loads(target.read_text(encoding="utf-8"))
+    assert len(exported["results"]) == 10
+    assert exported["model"]["name"] == "offline-cli-test"
+    assert exported["results"][0]["status"] == "error"
+    assert exported["results"][0]["score"] is None
+    assert sum(r["status"] == "ok" for r in exported["results"]) == 9
+
+    # --only-missing создаёт ровно одну новую оценку, не комплектует список старыми.
+    failing.clear()
+    retry_dir = tmp_path / "retry"
+    code, output = run_cli(retry_dir, "--only-missing")
+    assert code == 0 and "INCOMPLETE" in output
+    retry_ids = json.loads((retry_dir / "evaluation-ids.json").read_text())
+    assert len(retry_ids) == 1 and set(retry_ids).isdisjoint(selected)
+    report = json.loads((retry_dir / "run.json").read_text())
+    assert len(report["unprocessed_conversation_ids"]) == 9
+    assert not report["coverage_complete"]
+    previous = target.read_bytes()
+    with pytest.raises(SystemExit) as exc:
+        official(retry_dir)
+    assert exc.value.code == 1 and target.read_bytes() == previous
+
+    # Когда всё уже оценено, создаётся честный пустой список, без вызова провайдера.
+    calls.clear()
+    empty_dir = tmp_path / "empty"
+    code, output = run_cli(empty_dir, "--only-missing")
+    assert code == 0 and not calls and "INCOMPLETE" in output
+    assert json.loads((empty_dir / "evaluation-ids.json").read_text()) == []
+
+    limited_dir = tmp_path / "limited"
+    code, output = run_cli(limited_dir, "--limit", "1")
+    assert code == 0 and "INCOMPLETE" in output
+    assert len(json.loads((limited_dir / "evaluation-ids.json").read_text())) == 1
+    with pytest.raises(SystemExit):
+        official(limited_dir)
+    assert target.read_bytes() == previous
+
+
+@pytest.mark.parametrize("limit", ["0", "-1"])
+def test_cli_rejects_nonpositive_limit_before_provider_call(monkeypatch, limit):
+    monkeypatch.setattr(sys, "argv", ["batch", "--limit", limit])
+    with pytest.raises(SystemExit) as exc:
+        batch.main()
+    assert exc.value.code == 2
+
+
+def test_cli_pins_selection_and_evaluation_version_and_reports_missing_rows(
+    b6_env, tmp_path, monkeypatch, capsys,
+):
+    client = b6_env.client
+    records = [_sample_record(cid) for cid in ["cli-1", "cli-2", "cli-3"]]
+    assert client.post("/api/conversations/import", json={
+        "dataset_group": "CLI", "records": records,
+    }).status_code == 200
+
+    class OfflineProvider:
+        name = model = "offline-cli-test"
+
+        def generate(self, **kwargs):
+            return LLMResult(text=_valid_llm_json(), model=self.model)
+
+    monkeypatch.setattr(service, "get_provider", lambda: OfflineProvider())
+    monkeypatch.setattr(batch, "get_provider", lambda: OfflineProvider())
+    monkeypatch.setattr(batch, "SessionLocal", b6_env.sessions)
+    with b6_env.sessions() as db:
+        service.evaluate(db, "cli-1", b6_env.checklist_id)
+    original_run = service.run_batch
+
+    def change_checklist_then_run(ids, checklist_id, **kwargs):
+        assert ids == ["cli-2", "unknown"]  # cli-1 пропущен по pinned v1.
+        assert kwargs["pinned_checklist"][1] == 1
+        active = client.get("/api/checklists/active").json()
+        active["config"]["evaluator_notes"] = "Version changed before worker start"
+        updated = client.put(f"/api/checklists/{checklist_id}", json={"config": active["config"]})
+        assert updated.json()["version"] == 2
+        return original_run(ids, checklist_id, **kwargs)
+
+    monkeypatch.setattr(service, "run_batch", change_checklist_then_run)
+    out_dir = tmp_path / "pinned-cli"
+    monkeypatch.setattr(sys, "argv", [
+        "batch", "--group", "CLI", "--ids", "cli-1", "cli-2", "unknown",
+        "--only-missing", "--output-dir", str(out_dir),
+    ])
+    assert batch.main() == 1
+    output = capsys.readouterr().out
+    assert "INCOMPLETE" in output and "unknown" in output
+    report = json.loads((out_dir / "run.json").read_text())
+    assert report["checklist_version"] == 1
+    assert report["unprocessed_conversation_ids"] == ["cli-1", "cli-3", "unknown"]
+    with b6_env.sessions() as db:
+        rows = [db.get(Evaluation, i) for i in report["evaluation_ids"]]
+        assert len(rows) == 1 and rows[0].conversation_id == "cli-2"
+        assert rows[0].checklist_version == 1
+
+
+def test_cli_refuses_existing_output_directory_before_sync(tmp_path, monkeypatch):
+    existing = tmp_path / "existing"
+    existing.mkdir()
+    original = existing / "evaluation-ids.json"
+    original.write_text("[123]", encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", [
+        "batch", "--group", "DEV", "--sync", "--sync-only", "--output-dir", str(existing),
+    ])
+    monkeypatch.setattr(httpx, "get", lambda *a, **kw: pytest.fail("Must not request dataset"))
+    with pytest.raises(SystemExit) as exc:
+        batch.main()
+    assert exc.value.code == 1 and original.read_text() == "[123]"
+
+
+def test_signed_dataset_group_in_middle_and_redirect_logs(monkeypatch, caplog):
+    monkeypatch.setattr(get_settings(), "dataset_api_url",
+                        "https://dataset.example.test/invoke?sig=secret%2B&%67roup_id=old&empty=&k=2")
+    seen = []
+
+    def handle(request):
+        seen.append(request)
+        assert request.url.query == b"sig=secret%2B&group_id=DEV&empty=&k=2"
+        if request.url.path == "/invoke":
+            return httpx.Response(302, headers={
+                "Location": str(request.url.copy_with(path="/redirected")),
+            })
+        return httpx.Response(200, json={
+            "isSuccess": True, "data": {"dataset_group_id": "DEV", "total_records": 1,
+                                       "records": [_sample_record("redirected")]},
+        })
+
+    def fake_get(url, **kwargs):
+        with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+            return client.get(url, **kwargs)
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    caplog.set_level(logging.INFO)
+    assert fetch_dataset("DEV")[0].conversation_id == "redirected"
+    assert len(seen) == 2 and "secret" not in caplog.text
