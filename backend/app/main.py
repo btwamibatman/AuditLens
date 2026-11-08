@@ -62,7 +62,7 @@ def _mount_frontend(app: FastAPI, dist: Path, api_prefix: str) -> None:
         file = (dist / path).resolve()
         if path and file.is_file() and file.is_relative_to(dist):
             return FileResponse(file)
-        return FileResponse(index)
+        return FileResponse(index, headers={"Cache-Control": "no-cache"})
 
 
 app = create_app()

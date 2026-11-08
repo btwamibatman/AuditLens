@@ -95,7 +95,9 @@ npm run dev       # backend :8000 + frontend :5173
 | 1 мин | Изменение критерия и применение чек-листа | «Редактор чек-листа» → сохранить → оценить диалог |
 
 <details>
-<summary>📸 Скриншоты</summary>
+<summary>📸 Скриншоты (тёмная тема, редактор чек-листа, апелляция)</summary>
+
+![Тёмная тема](docs/screenshots/04-dark-mode.png)
 
 ![Редактор чек-листа](docs/screenshots/02-checklist-editor.png)
 

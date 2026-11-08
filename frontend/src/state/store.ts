@@ -9,6 +9,7 @@ import type {
 
 export interface AppState {
   activeTab: 'workspace' | 'checklists'
+  theme: 'light' | 'dark'
   conversations: ConversationSummary[]
   selectedConversationId: string | null
   selectedConversation: ConversationRead | null
@@ -36,8 +37,19 @@ export interface AppState {
   toast: { type: 'success' | 'error'; message: string } | null
 }
 
+function applyTheme(theme: 'light' | 'dark') {
+  if (typeof document === 'undefined') return
+  const root = document.documentElement
+  root.classList.toggle('dark', theme === 'dark')
+  root.classList.toggle('light', theme === 'light')
+  root.style.colorScheme = theme
+}
+
+applyTheme('light')
+
 const initialState: AppState = {
   activeTab: 'workspace',
+  theme: 'light',
   conversations: [],
   selectedConversationId: null,
   selectedConversation: null,
@@ -77,7 +89,14 @@ class Store {
 
   setState(partial: Partial<AppState>) {
     this.state = { ...this.state, ...partial }
+    if (partial.theme) {
+      applyTheme(partial.theme)
+    }
     this.notify()
+  }
+
+  toggleTheme() {
+    this.setState({ theme: this.state.theme === 'dark' ? 'light' : 'dark' })
   }
 
   subscribe(listener: Listener): () => void {
