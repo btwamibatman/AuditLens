@@ -143,6 +143,7 @@ class EvaluationRead(BaseModel):
     conversation_id: str
     checklist_id: int | None
     checklist_version: int
+    checklist_snapshot: dict | None = None
     status: str
     error: str | None
     model: str

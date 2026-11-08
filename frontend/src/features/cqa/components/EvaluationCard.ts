@@ -50,7 +50,13 @@ export function renderEvaluationCard(container: HTMLElement) {
     const ev = state.currentEvaluation
     const isMock = ev?.model ? ev.model.toLowerCase().includes('mock') : true
     const activeResult = ev?.final_result ?? ev?.ai_result
+    const aiResult = ev?.ai_result ?? null
     const totalScore = ev?.total_score ?? activeResult?.total ?? null
+    const aiTotalScore = aiResult?.total ?? null
+    const wasReviewed = Boolean(
+      (aiTotalScore !== null && totalScore !== null && aiTotalScore !== totalScore) ||
+        activeResult?.criteria.some((c) => c.source === 'reviewer'),
+    )
     const hasCritical = ev?.has_critical_error ?? activeResult?.has_critical_error ?? false
 
     container.innerHTML = `
@@ -153,6 +159,17 @@ export function renderEvaluationCard(container: HTMLElement) {
                 <div class="text-3xl font-black text-slate-900 dark:text-white mt-1">
                   ${totalScore !== null ? `${totalScore} / 100` : '—'}
                 </div>
+                ${
+                  wasReviewed && aiTotalScore !== null
+                    ? `
+                  <div class="mt-1.5 text-xs font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/60 px-2.5 py-1 rounded-lg inline-flex items-center gap-1.5">
+                    <span>Исходная AI: <b>${aiTotalScore}</b></span>
+                    <span>→</span>
+                    <span>Финальная: <b>${totalScore ?? '—'}</b></span>
+                  </div>
+                `
+                    : ''
+                }
                 <div class="flex items-center gap-2 mt-2.5">
                   <span class="inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full font-semibold ${
                     ev.status === 'done'
@@ -212,9 +229,14 @@ export function renderEvaluationCard(container: HTMLElement) {
                 activeResult?.criteria
                   .map((crit: CriterionResult) => {
                     const isNa = crit.status === 'na' || crit.score === null
+                    const aiCrit = aiResult?.criteria.find(
+                      (c: CriterionResult) => c.criterion_id === crit.criterion_id,
+                    )
+                    const isOverturned = crit.source === 'reviewer' && aiCrit
                     const appealsForCrit = state.appeals.filter(
                       (a) => a.criterion_id === crit.criterion_id,
                     )
+                    const hasPendingAppeal = appealsForCrit.some((a) => a.status === 'pending')
 
                     return `
                   <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 space-y-2.5">
@@ -263,6 +285,20 @@ export function renderEvaluationCard(container: HTMLElement) {
                     <div class="text-[13.5px] text-slate-700 dark:text-slate-200 leading-relaxed font-normal">
                       ${escapeHtml(crit.explanation)}
                     </div>
+
+                    ${
+                      isOverturned && aiCrit
+                        ? `
+                      <div class="p-2.5 rounded-lg bg-slate-100/80 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 space-y-1">
+                        <div class="font-bold text-slate-700 dark:text-slate-200">
+                          Исходная оценка AI: ${aiCrit.status === 'na' || aiCrit.score === null ? 'N/A' : `${aiCrit.score} б.`}
+                          → Финальная: ${isNa ? 'N/A' : `${crit.score} б.`}
+                        </div>
+                        <div><b>Обоснование AI:</b> ${escapeHtml(aiCrit.explanation)}</div>
+                      </div>
+                    `
+                        : ''
+                    }
 
                     ${
                       isNa && crit.na_reason
@@ -342,9 +378,10 @@ export function renderEvaluationCard(container: HTMLElement) {
 
                       <button
                         data-appeal-crit-id="${escapeHtml(crit.criterion_id)}"
-                        class="cqa-open-appeal-btn text-xs font-semibold px-3 py-1 rounded text-indigo-600 hover:text-indigo-950 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/50 dark:hover:text-white border border-indigo-200 dark:border-indigo-800 transition-colors"
+                        ${hasPendingAppeal ? 'disabled title="Апелляция уже на рассмотрении — нажмите «Рассмотреть апелляцию» ниже"' : ''}
+                        class="cqa-open-appeal-btn text-xs font-semibold px-3 py-1 rounded text-indigo-600 hover:text-indigo-950 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/50 dark:hover:text-white border border-indigo-200 dark:border-indigo-800 disabled:opacity-40 disabled:pointer-events-none transition-colors"
                       >
-                        Оспорить оценку
+                        ${hasPendingAppeal ? 'Апелляция подана' : 'Оспорить оценку'}
                       </button>
                     </div>
 
@@ -357,23 +394,24 @@ export function renderEvaluationCard(container: HTMLElement) {
                           .map((app) => {
                             const isPending = app.status === 'pending'
                             return `
-                            <div class="p-2.5 rounded-lg bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/40 text-xs space-y-1">
-                              <div class="flex items-center justify-between">
-                                <span class="font-bold text-[10px] uppercase px-1.5 py-0.5 rounded ${
+                            <div class="p-3 rounded-lg bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/60 text-xs space-y-2">
+                              <div class="flex items-center justify-between gap-2">
+                                <span class="font-bold text-[10px] uppercase px-2 py-0.5 rounded ${
                                   isPending
-                                    ? 'bg-amber-100 text-amber-800'
-                                    : 'bg-emerald-100 text-emerald-800'
+                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                                 }">
-                                  ${isPending ? 'На рассмотрении' : 'Пересмотрена'}
+                                  ${isPending ? 'На рассмотрении' : 'Рассмотрена'}
                                 </span>
                                 ${
                                   isPending
                                     ? `
                                   <button
                                     data-review-appeal-id="${app.id}"
-                                    class="cqa-review-appeal-btn text-xs font-semibold text-emerald-600 hover:underline"
+                                    class="cqa-review-appeal-btn inline-flex items-center gap-1 px-3 py-1 rounded-md text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-2xs transition-colors cursor-pointer"
                                   >
-                                    Рассмотреть (Проверяющий)
+                                    <span class="material-symbols-outlined text-[14px]">gavel</span>
+                                    <span>Принять решение (Проверяющий)</span>
                                   </button>
                                 `
                                     : ''

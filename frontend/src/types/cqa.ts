@@ -170,6 +170,7 @@ export interface EvaluationRead {
   conversation_id: string
   checklist_id: number | null
   checklist_version: number
+  checklist_snapshot?: ChecklistConfig | null
   status: 'done' | 'failed' | 'pending'
   error?: string | null
   model: string
