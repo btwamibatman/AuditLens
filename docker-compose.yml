@@ -14,13 +14,10 @@ services:
       - ENABLE_AI=${ENABLE_AI:-false}
       - SECRET_KEY=${SECRET_KEY:-dev-secret-change-me-please-32-bytes-min}
       - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-10}
-      - AI_BASE_URL=${AI_BASE_URL:-https://api.openai.com/v1}
-      - AI_API_KEY=${AI_API_KEY:-}
-      - AI_MODEL=${AI_MODEL:-gpt-4o-mini}
       # CQA / Gemini & Dataset API settings (from root .env)
       - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.6-flash}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash-lite}
       - GEMINI_THINKING_LEVEL=${GEMINI_THINKING_LEVEL:-medium}
       - LLM_TIMEOUT_SECONDS=${LLM_TIMEOUT_SECONDS:-120}
       - LLM_MAX_RETRIES=${LLM_MAX_RETRIES:-3}
@@ -32,6 +29,12 @@ services:
     volumes:
       - ./backend/data:/app/backend/data
     restart: unless-stopped
+    init: true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # Опциональный PostgreSQL для проектов, требующих реляционную СУБД:
   # Чтобы включить: раскомментируйте блок ниже и укажите DATABASE_URL в .env:
