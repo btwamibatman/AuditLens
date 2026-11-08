@@ -1,6 +1,6 @@
-<div align="center">
-
 # 🔍 Team: Revenant - AuditLens
+
+<div align="center">
 
 **AI-оценка качества работы операторов поддержки — с доказательствами, апелляциями и пересчётом итога**
 
@@ -11,7 +11,6 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-Vite-3178C6?logo=typescript&logoColor=white)
 ![Tailwind](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)
 ![Gemini](https://img.shields.io/badge/Gemini-3.5_Flash--Lite-8E75B2?logo=googlegemini&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
 ![Tests](https://img.shields.io/badge/tests-193_passed-success)
 
 ![AuditLens — диалог и карточка оценки](docs/screenshots/01-evaluation.png)
@@ -53,21 +52,7 @@
 
 ## 🚀 Быстрый старт
 
-### Вариант A — Docker (рекомендуется)
-
-```bash
-cp .env.example .env          # впишите GEMINI_API_KEY
-docker compose up -d --build
-```
-
-Откройте **http://localhost:8000** · Swagger: http://localhost:8000/api/docs · Health: http://localhost:8000/api/health
-
-При старте контейнер сам применяет миграции и создаёт стартовый чек-лист из 8 критериев ТЗ.
-База SQLite хранится в `backend/data/` (том), поэтому данные переживают перезапуск.
-
-### Вариант B — локально
-
-Нужны Node.js 20.19+, Python 3.11+ (рекомендуется `uv`).
+Требуются Node.js 20+ и Python 3.11+ (или `uv`):
 
 ```bash
 npm run setup     # venv, зависимости, .env, миграции, чек-лист, пакеты фронтенда
@@ -124,9 +109,6 @@ flowchart LR
 
 **Модель только выставляет значения по критериям — вся математика в коде** (`scoring.py`):
 
-$$
-\text{итог} = \sum_{i \in \text{применимые}} \frac{\text{значение}_i}{\text{максимум}_i} \cdot \frac{\text{вес}_i}{\sum \text{вес}_\text{применимых}} \cdot 100
-$$
 
 - **N/A** исключает критерий и пропорционально перераспределяет его вес; это не ноль и не ошибка.
 - Округление — `half_up` до 2 знаков, как в чек-листе организаторов.
@@ -153,17 +135,16 @@ $$
 
 ---
 
-## 📊 Результаты на DEV
+## 📊 Результаты оценки (DEV и PROD)
 
-Файл сдачи: [`results/dev/results.json`](results/dev/results.json) — формат JSON 1.0 организаторов.
+Файлы сдачи в формате JSON 1.0 организаторов:
+- **DEV (65 диалогов):** [`results/dev/results.json`](results/dev/results.json)
+- **PROD (10 контрольных чатов):** [`results/prod/results.json`](results/prod/results.json)
 
-| Показатель | Значение |
-| --- | --- |
-| Диалогов | **65** (60 чатов + 5 звонков · 35 RU / 15 KZ / 15 EN) |
-| Статус | **65 `ok`** · 0 `error` |
-| Итоговый балл | min 10.0 · среднее 86.15 · max 100.0 |
-| Выявлено грубых ошибок | 5 |
-| Средняя задержка оценки | ≈ 6.9 с |
+| Набор | Всего диалогов | Статус | Средний балл | Диапазон баллов | Грубые ошибки |
+| --- | :---: | :---: | :---: | :---: | :---: |
+| **DEV** | 65 (60 чатов + 5 звонков) | **65 `ok`** | **86.15** | 10.0 – 100.0 | 5 |
+| **PROD** | 10 контрольных чатов | **10 `ok`** | **76.04** | 0.0 – 100.0 | 1 |
 
 > [!NOTE]
 > Это результаты одного прогона модели, а не проверенная разметка. Независимая ручная
@@ -235,12 +216,12 @@ flowchart TB
 
 ```bash
 # 1. оценить набор (новая папка на каждый запуск)
-node scripts/py.mjs -m app.features.evaluations.batch --group DEV --checklist 1 --output-dir data/exports/dev-run
+node scripts/py.mjs -m app.features.evaluations.batch --group DEV --checklist 2 --output-dir data/exports/dev-run
 
 # 2. проверить и записать results/dev/results.json (ровно 65 записей)
 node scripts/py.mjs -m app.features.evaluations.export --kind dev --group DEV \
   --dataset ../docs/invoke.json --evaluation-ids data/exports/dev-run/evaluation-ids.json \
-  --checklist-id 1 --checklist-version 1 --source ai --team "AuditLens" --model-mode external_api
+  --checklist-id 2 --checklist-version 1 --source ai --team "Revenant" --model-mode external_api
 ```
 
 Экспортёр не вызывает модель: он сверяет ID с исходным набором, типы, ступени, индексы
@@ -295,6 +276,6 @@ npm run build       # сборка фронтенда
 
 <div align="center">
 
-Сделано командой **AuditLens** для Freedom Broker · CQA Hackathon
+Сделано командой **Revenant** для Freedom Broker · CQA Hackathon
 
 </div>
